@@ -1,14 +1,14 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
-import sklearn
+
 
 
 SEED = 42
 TEST_FRAC = 0.20
-DATA_PATH = "big_data_set/data/table4.csv"
+DATA_PATH = "small_data_set/data/table4.csv"
 
-TRAIN_OUT = "big_data_set/data/table4_train.pkl"
-TEST_OUT  = "big_data_set/data/table4_test.pkl"
+TRAIN_OUT = "small_data_set/data/table4_train.pkl"
+TEST_OUT  = "small_data_set/data/table4_test.pkl"
 
 def main():
     df = pd.read_csv(DATA_PATH)

@@ -6,8 +6,8 @@ SEED = 42
 TRAIN_FRAC = 0.70
 
 # Load curated datasets
-evaders = pd.read_pickle("data_curated/efflux_evaders_om_corrected.pkl")
-substrates = pd.read_pickle("data_curated/efflux_substrates_om_corrected.pkl")
+evaders = pd.read_pickle("big_data_set/data_curated/efflux_evaders_om_corrected.pkl")
+substrates = pd.read_pickle("big_data_set/data_curated/efflux_substrates_om_corrected.pkl")
 
 # Basic cleaning
 evaders = evaders.dropna(subset=["SMILES"]).drop_duplicates(subset=["SMILES"]).reset_index(drop=True)

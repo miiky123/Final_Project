@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import train_test_split
 
@@ -15,3 +16,12 @@ X_train, X_test, y_train, y_test = train_test_split(
 print(X_train.shape, X_test.shape)
 print("Train class ratio:\n", y_train.value_counts(normalize=True))
 print("Test class ratio:\n", y_test.value_counts(normalize=True))
+
+
+
+y.value_counts().plot(kind='bar')
+plt.title("Class Distribution – Breast Cancer Dataset")
+plt.xlabel("Class")
+plt.ylabel("Count")
+plt.show()
+

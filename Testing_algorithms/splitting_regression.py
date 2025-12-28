@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+
 from sklearn.datasets import load_diabetes
 from sklearn.model_selection import train_test_split
 
@@ -14,4 +16,10 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 print(X_train.shape, X_test.shape)
+
+y.hist(bins=30)
+plt.title("Target Distribution – Diabetes Dataset")
+plt.xlabel("Disease Progression Measure")
+plt.ylabel("Frequency")
+plt.show()
 

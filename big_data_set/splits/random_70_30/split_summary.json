@@ -1,0 +1,32 @@
+{
+  "input": {
+    "evaders": "big_data_set/data_curated/efflux_evaders_om_corrected.pkl",
+    "substrates": "big_data_set/data_curated/efflux_substrates_om_corrected.pkl",
+    "nonpermeating": null
+  },
+  "cleaning": {
+    "n_in": 738,
+    "invalid_smiles": 0,
+    "dedup_removed": 0,
+    "n_out": 738
+  },
+  "split": {
+    "mode": "random_stratified",
+    "seed": 42,
+    "test_frac": 0.3,
+    "train_size": 517,
+    "test_size": 221,
+    "train_class_counts": {
+      "Efflux Substrate": 388,
+      "Efflux Evader": 129
+    },
+    "test_class_counts": {
+      "Efflux Substrate": 166,
+      "Efflux Evader": 55
+    }
+  },
+  "leakage": {
+    "smiles_overlap_count": 0,
+    "smiles_overlap_examples": []
+  }
+}

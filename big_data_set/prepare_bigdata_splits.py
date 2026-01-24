@@ -179,9 +179,23 @@ def class_counts(df: pd.DataFrame) -> Dict[str, int]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--evaders", type=Path, required=True)
-    ap.add_argument("--substrates", type=Path, required=True)
-    ap.add_argument("--outdir", type=Path, required=True)
+
+    ap.add_argument(
+        "--evaders",
+        type=Path,
+        default=Path("big_data_set/data_curated/efflux_evaders_om_corrected.pkl"),
+    )
+    ap.add_argument(
+        "--substrates",
+        type=Path,
+        default=Path("big_data_set/data_curated/efflux_substrates_om_corrected.pkl"),
+    )
+    ap.add_argument(
+        "--outdir",
+        type=Path,
+        default=Path("big_data_set/splits/random_70_30"),
+    )
+
     ap.add_argument("--test-frac", type=float, default=0.30)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--mode", choices=["random_stratified", "scaffold"], default="random_stratified")
@@ -189,6 +203,7 @@ def main():
     # non-permeating
     ap.add_argument("--nonpermeating", type=Path, default=None, help="CSV/TSV/PKL containing non-permeating compounds")
     ap.add_argument("--nonpermeating-smiles-col", type=str, default="SMILES")
+
 
     args = ap.parse_args()
 
@@ -239,3 +254,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

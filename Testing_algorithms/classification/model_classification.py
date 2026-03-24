@@ -5,13 +5,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 CURRENT_DIR = os.path.dirname(__file__)
-REGRESSION_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "regression"))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
-for path in [REGRESSION_DIR, PROJECT_ROOT]:
+for path in [PROJECT_ROOT]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from spliting import get_classification_split as get_article_classification_split
+from small_data_set.spliting import get_classification_split as get_article_classification_split
 from big_data_set.spliting import get_classification_split as get_big_classification_split
 
 

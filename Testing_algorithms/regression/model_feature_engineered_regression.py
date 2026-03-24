@@ -1,9 +1,17 @@
+import os
+import sys
+
 import numpy as np
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.feature_selection import SelectKBest, f_regression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from spliting import get_regression_split
+CURRENT_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from small_data_set.spliting import get_regression_split
 
 
 def add_engineered_features(df):

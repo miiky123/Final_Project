@@ -1,3 +1,6 @@
+import os
+import sys
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import ExtraTreesRegressor, GradientBoostingRegressor
@@ -8,7 +11,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 
-from spliting import get_regression_split
+CURRENT_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from small_data_set.spliting import get_regression_split
 
 
 def evaluate_models_cv(models, X, y, cv):

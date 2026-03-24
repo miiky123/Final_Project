@@ -1,26 +1,18 @@
 import os
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from rdkit import Chem
-from rdkit.Chem import Descriptors, rdMolDescriptors
+from rdkit import Chem, RDLogger
+from rdkit.Chem import Descriptors
 
 SEED = 42
 TEST_FRAC = 0.20
 
 DATA_DIR = "small_data_set/data"
 TABLES = [1, 2, 3, 4]
-FEATURE_COLUMNS = [
-    "MolWt",
-    "LogP",
-    "TPSA",
-    "HBD",
-    "HBA",
-    "RotB",
-    "RingCount",
-    "HeavyAtomCount",
-    "FracCSP3",
-]
+DESCRIPTOR_FUNCTIONS = dict(Descriptors._descList)
+FEATURE_COLUMNS = list(DESCRIPTOR_FUNCTIONS.keys())
 
 # Outputs
 CONSOLIDATED_OUT_CSV = os.path.join(DATA_DIR, "tables1_4_consolidated.csv")
@@ -28,6 +20,8 @@ CONSOLIDATED_OUT_PKL = os.path.join(DATA_DIR, "tables1_4_consolidated.pkl")
 
 TRAIN_OUT = os.path.join(DATA_DIR, "tables1_4_train.pkl")
 TEST_OUT = os.path.join(DATA_DIR, "tables1_4_test.pkl")
+
+RDLogger.DisableLog("rdApp.error")
 
 
 def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
@@ -64,18 +58,18 @@ def _compute_rdkit_descriptors(smiles: str) -> dict | None:
     if mol is None:
         return None
 
-    # Uniform descriptor set (no table-specific experimental fields)
-    return {
-        "MolWt": Descriptors.MolWt(mol),
-        "LogP": Descriptors.MolLogP(mol),
-        "TPSA": rdMolDescriptors.CalcTPSA(mol),
-        "HBD": rdMolDescriptors.CalcNumHBD(mol),
-        "HBA": rdMolDescriptors.CalcNumHBA(mol),
-        "RotB": rdMolDescriptors.CalcNumRotatableBonds(mol),
-        "RingCount": rdMolDescriptors.CalcNumRings(mol),
-        "HeavyAtomCount": rdMolDescriptors.CalcNumHeavyAtoms(mol),
-        "FracCSP3": rdMolDescriptors.CalcFractionCSP3(mol),
-    }
+    values = {}
+    for name, func in DESCRIPTOR_FUNCTIONS.items():
+        try:
+            value = func(mol)
+        except Exception:
+            value = np.nan
+
+        if isinstance(value, (int, float, np.integer, np.floating)) and not np.isfinite(value):
+            value = np.nan
+        values[name] = value
+
+    return values
 
 
 def _load_one_table(table_num: int) -> pd.DataFrame:
@@ -158,12 +152,13 @@ def build_consolidated_dataset() -> pd.DataFrame:
     desc_df = pd.DataFrame(desc_rows)
     out = pd.concat([all_df.reset_index(drop=True), desc_df], axis=1)
 
-    # Drop invalid SMILES rows
-    out = out.dropna(subset=["MolWt"]).reset_index(drop=True)
+    # Drop invalid SMILES rows.
+    out = out.dropna(subset=[FEATURE_COLUMNS[0]]).reset_index(drop=True)
 
     print("=== Consolidation summary (Tables 1–4) ===")
     print("Unique SMILES:", out["SMILES"].nunique())
     print("Final rows after RDKit + de-dup:", len(out))
+    print("RDKit 1D/2D descriptor count:", len(FEATURE_COLUMNS))
     if bad > 0:
         print("Invalid SMILES encountered:", bad)
 

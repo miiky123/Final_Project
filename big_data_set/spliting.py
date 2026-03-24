@@ -8,7 +8,7 @@ SEED = 42
 TRAIN_FRAC = 0.70
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DATA_DIR = os.path.join(BASE_DIR, "big_data_set", "data_curated")
-DEFAULT_SPLIT_DIR = os.path.join(BASE_DIR, "big_data_set", "splits", "random_70_30")
+DEFAULT_SPLIT_DIR = os.path.join(BASE_DIR, "big_data_set", "splits", "split")
 
 
 def shuffle_and_split(df, train_frac=0.7, seed=42):
@@ -45,12 +45,12 @@ def load_saved_split(split_dir=DEFAULT_SPLIT_DIR):
     train_path = os.path.join(split_dir, "train.pkl")
     test_path = os.path.join(split_dir, "test.pkl")
 
-    if not os.path.exists(train_path) or not os.path.exists(test_path):
-        return build_split_dataframes()
+    if os.path.exists(train_path) and os.path.exists(test_path):
+        train_df = pd.read_pickle(train_path)
+        test_df = pd.read_pickle(test_path)
+        return train_df, test_df
 
-    train_df = pd.read_pickle(train_path)
-    test_df = pd.read_pickle(test_path)
-    return train_df, test_df
+    return build_split_dataframes()
 
 
 def _fingerprints_to_frame(series: pd.Series) -> pd.DataFrame:

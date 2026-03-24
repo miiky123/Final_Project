@@ -1,9 +1,17 @@
+import os
+import sys
+
 import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
-from spliting import get_regression_split
+CURRENT_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from small_data_set.spliting import get_regression_split
 
 
 def train_and_evaluate():

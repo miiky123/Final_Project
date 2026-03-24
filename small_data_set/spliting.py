@@ -10,6 +10,17 @@ TEST_FRAC = 0.20
 
 DATA_DIR = "small_data_set/data"
 TABLES = [1, 2, 3, 4]
+FEATURE_COLUMNS = [
+    "MolWt",
+    "LogP",
+    "TPSA",
+    "HBD",
+    "HBA",
+    "RotB",
+    "RingCount",
+    "HeavyAtomCount",
+    "FracCSP3",
+]
 
 # Outputs
 CONSOLIDATED_OUT_CSV = os.path.join(DATA_DIR, "tables1_4_consolidated.csv")
@@ -139,10 +150,7 @@ def build_consolidated_dataset() -> pd.DataFrame:
     for smi in all_df["SMILES"].tolist():
         d = _compute_rdkit_descriptors(smi)
         if d is None:
-            desc_rows.append({k: None for k in [
-                "MolWt", "LogP", "TPSA", "HBD", "HBA", "RotB",
-                "RingCount", "HeavyAtomCount", "FracCSP3"
-            ]})
+            desc_rows.append({k: None for k in FEATURE_COLUMNS})
             bad += 1
         else:
             desc_rows.append(d)
@@ -162,11 +170,31 @@ def build_consolidated_dataset() -> pd.DataFrame:
     return out
 
 
-def split_and_save(df: pd.DataFrame) -> None:
-    stratify = None
-    if "Accum_Class" in df.columns:
+def _build_accum_stratify_labels(df: pd.DataFrame, max_bins: int = 5) -> pd.Series | None:
+    """Create stratification labels from the Accum distribution."""
+    if "Accum" not in df.columns or len(df) < 4:
+        return None
+
+    for n_bins in range(max_bins, 1, -1):
+        try:
+            labels = pd.qcut(df["Accum"], q=n_bins, duplicates="drop")
+        except ValueError:
+            continue
+
+        counts = labels.value_counts(dropna=False)
+        if len(counts) >= 2 and counts.min() >= 2:
+            return labels.astype(str)
+
+    return None
+
+
+def split_dataframe(df: pd.DataFrame):
+    """Split the consolidated dataframe into train and test sets."""
+    stratify = _build_accum_stratify_labels(df)
+
+    if stratify is None and "Accum_Class" in df.columns:
         vc = df["Accum_Class"].value_counts(dropna=False)
-        if len(vc) >= 2 and (vc.min() >= 2):
+        if len(vc) >= 2 and vc.min() >= 2:
             stratify = df["Accum_Class"]
 
     train_df, test_df = train_test_split(
@@ -176,6 +204,26 @@ def split_and_save(df: pd.DataFrame) -> None:
         shuffle=True,
         stratify=stratify
     )
+
+    return train_df, test_df
+
+
+def get_regression_split():
+    """Build the dataset and return feature and target splits for regression."""
+    df = build_consolidated_dataset()
+    train_df, test_df = split_dataframe(df)
+
+    X_train = train_df[FEATURE_COLUMNS]
+    X_test = test_df[FEATURE_COLUMNS]
+    y_train = train_df["Accum"]
+    y_test = test_df["Accum"]
+
+    return X_train, X_test, y_train, y_test
+
+
+def split_and_save(df: pd.DataFrame) -> None:
+    """Split the dataframe and save the consolidated and split outputs."""
+    train_df, test_df = split_dataframe(df)
 
     print("\n=== Split summary (Tables 1–4 consolidated) ===")
     print("Total:", len(df))

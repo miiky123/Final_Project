@@ -1,0 +1,39 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Notebook / test caches
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# Small dataset generated artifacts
+small_data_set/data/descriptor_scaler.pkl
+small_data_set/data/tables1_4_consolidated.csv
+small_data_set/data/tables1_4_consolidated.pkl
+small_data_set/data/tables1_4_no_outliers.csv
+small_data_set/data/tables1_4_scaled.csv
+small_data_set/data/tables1_4_train.pkl
+small_data_set/data/tables1_4_test.pkl
+small_data_set/splits/
+
+# Big dataset generated split artifacts
+big_data_set/splits/
+
+# Keep curated big-data source files and raw small-data tables tracked
+!big_data_set/data_curated/
+!big_data_set/data_curated/*.pkl
+!small_data_set/data/
+!small_data_set/data/table1.csv
+!small_data_set/data/table2.csv
+!small_data_set/data/table3.csv
+!small_data_set/data/table4.csv

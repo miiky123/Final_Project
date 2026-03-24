@@ -7,11 +7,13 @@ def main():
     substrates = pd.read_pickle("big_data_set/data_curated/efflux_substrates_om_corrected.pkl")
 
     print("=== Evaders ===")
+    print("Shape:", evaders.shape)
     print(evaders.head())
     print(evaders.columns)
     print()
 
-    print("=== Substrates ===")
+    print("=== Non Evaders (removed from cell) ===")
+    print("Shape:", substrates.shape)
     print(substrates.head())
     print(substrates.columns)
     print()
@@ -19,7 +21,7 @@ def main():
     evaders_size = len(evaders)
     substrates_size = len(substrates)
 
-    labels = ["Evaders", "Substrates"]
+    labels = ["Evaders", "Non Evaders\n(removed from cell)"]
     counts = [evaders_size, substrates_size]
 
     total = sum(counts)

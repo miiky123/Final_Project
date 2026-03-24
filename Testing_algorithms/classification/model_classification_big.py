@@ -5,34 +5,25 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 CURRENT_DIR = os.path.dirname(__file__)
-REGRESSION_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "regression"))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
-for path in [REGRESSION_DIR, PROJECT_ROOT]:
-    if path not in sys.path:
-        sys.path.insert(0, path)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-from spliting import get_classification_split as get_article_classification_split
-from big_data_set.spliting import get_classification_split as get_big_classification_split
-
-
-def load_classification_split(dataset_name="smalldata"):
-    """Load classification data from the requested dataset source."""
-    if dataset_name in {"smalldata", "article"}:
-        return get_article_classification_split()
-    if dataset_name == "big":
-        return get_big_classification_split()
-    raise ValueError("dataset_name must be 'smalldata' or 'big'.")
+from big_data_set.spliting import get_classification_split
 
 
 def print_split_summary(y_train, y_test):
     """Print train/test sizes and class distributions."""
+    train_counts = y_train.value_counts().sort_index()
+    test_counts = y_test.value_counts().sort_index()
+
     print("=== Split Summary ===")
     print("Train size:", len(y_train))
     print("Test size :", len(y_test))
     print("\nTrain class counts:")
-    print(y_train.value_counts().sort_index())
+    print(train_counts)
     print("\nTest class counts:")
-    print(y_test.value_counts().sort_index())
+    print(test_counts)
     print("\nTrain class ratio:")
     print(y_train.value_counts(normalize=True).sort_index())
     print("\nTest class ratio:")
@@ -40,7 +31,7 @@ def print_split_summary(y_train, y_test):
 
 
 def print_metrics(split_name, y_true, y_pred):
-    """Print evaluation metrics for one split."""
+    """Print evaluation metrics for a single split."""
     print(f"\n=== {split_name} Metrics ===")
     print("Accuracy:", accuracy_score(y_true, y_pred))
     print("\nConfusion Matrix:")
@@ -49,11 +40,11 @@ def print_metrics(split_name, y_true, y_pred):
     print(classification_report(y_true, y_pred))
 
 
-def train_and_evaluate(dataset_name="smalldata"):
-    """Train a simple baseline classifier and print train/test evaluation metrics."""
-    X_train, X_test, y_train, y_test = load_classification_split(dataset_name)
+def train_and_evaluate():
+    """Train and evaluate a classifier using train/test analysis on the big dataset."""
+    X_train, X_test, y_train, y_test = get_classification_split()
 
-    print(f"=== Dataset: {dataset_name} ===")
+    print("=== Dataset: big ===")
     print("X_train shape:", X_train.shape)
     print("X_test shape :", X_test.shape)
     print_split_summary(y_train, y_test)
@@ -69,5 +60,4 @@ def train_and_evaluate(dataset_name="smalldata"):
 
 
 if __name__ == "__main__":
-    dataset_name = sys.argv[1] if len(sys.argv) > 1 else "smalldata"
-    train_and_evaluate(dataset_name)
+    train_and_evaluate()

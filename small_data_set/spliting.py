@@ -5,6 +5,7 @@ from sklearn.model_selection import train_test_split
 
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors
+from rdkit.Chem.MolStandardize import rdMolStandardize
 
 SEED = 42
 TEST_FRAC = 0.20
@@ -23,6 +24,7 @@ TRAIN_OUT = os.path.join(DATA_DIR, "tables1_4_train.pkl")
 TEST_OUT = os.path.join(DATA_DIR, "tables1_4_test.pkl")
 
 RDLogger.DisableLog("rdApp.error")
+REIONIZER = rdMolStandardize.Reionizer()
 
 
 def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
@@ -58,6 +60,11 @@ def _compute_rdkit_descriptors(smiles: str) -> dict | None:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
+
+    # RDKit does not provide exact pH 7.4 protonation, so we use standardized
+    # reionized forms as a consistent physiological-pH approximation.
+    mol = rdMolStandardize.Cleanup(mol)
+    mol = REIONIZER.reionize(mol)
 
     values = {}
     for name, func in DESCRIPTOR_FUNCTIONS.items():

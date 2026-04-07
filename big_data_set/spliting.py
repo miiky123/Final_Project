@@ -2,13 +2,17 @@ import os
 
 import numpy as np
 import pandas as pd
-from rdkit import DataStructs
+from rdkit import Chem, DataStructs
+from rdkit.Chem import rdFingerprintGenerator
+from rdkit.Chem.MolStandardize import rdMolStandardize
 
 SEED = 42
 TRAIN_FRAC = 0.70
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DATA_DIR = os.path.join(BASE_DIR, "big_data_set", "data_curated")
 DEFAULT_SPLIT_DIR = os.path.join(BASE_DIR, "big_data_set", "splits", "split")
+REIONIZER = rdMolStandardize.Reionizer()
+MORGAN_GENERATOR = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
 
 
 def shuffle_and_split(df, train_frac=0.7, seed=42):
@@ -71,6 +75,42 @@ def _fingerprints_to_frame(series: pd.Series) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns, index=series.index)
 
 
+def _mol_from_smiles_physiological(smiles: str):
+    """Create a standardized molecule using RDKit's closest built-in pH approximation."""
+    if not isinstance(smiles, str) or not smiles.strip():
+        return None
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    mol = rdMolStandardize.Cleanup(mol)
+    mol = REIONIZER.reionize(mol)
+    return mol
+
+
+def _fingerprints_from_smiles(smiles_series: pd.Series) -> pd.DataFrame:
+    """Recompute Morgan fingerprints from standardized molecules."""
+    rows = []
+    n_bits = None
+
+    for smiles in smiles_series:
+        mol = _mol_from_smiles_physiological(smiles)
+        if mol is None:
+            raise ValueError("Found invalid SMILES while rebuilding fingerprints.")
+
+        fp = MORGAN_GENERATOR.GetFingerprint(mol)
+        if n_bits is None:
+            n_bits = int(fp.GetNumBits())
+
+        arr = np.zeros((n_bits,), dtype=np.int8)
+        DataStructs.ConvertToNumpyArray(fp, arr)
+        rows.append(arr)
+
+    columns = [f"fp_{i}" for i in range(n_bits)]
+    return pd.DataFrame(rows, columns=columns, index=smiles_series.index)
+
+
 def _numeric_feature_columns(df: pd.DataFrame, target_col: str):
     """Pick numeric feature columns while excluding known target-like fields."""
     excluded = {
@@ -107,8 +147,8 @@ def get_classification_split(split_dir=DEFAULT_SPLIT_DIR, feature_set="auto"):
         feature_set = "fps" if "fps" in train_df.columns else "numeric"
 
     if feature_set == "fps":
-        X_train = _fingerprints_to_frame(train_df["fps"])
-        X_test = _fingerprints_to_frame(test_df["fps"])
+        X_train = _fingerprints_from_smiles(train_df["SMILES"])
+        X_test = _fingerprints_from_smiles(test_df["SMILES"])
     elif feature_set == "numeric":
         feature_columns = _numeric_feature_columns(train_df, target_col)
         X_train = train_df[feature_columns].copy()

@@ -85,7 +85,6 @@ def _load_one_table(table_num: int) -> pd.DataFrame:
 
 
 def _keep_only_shared_core(df: pd.DataFrame) -> pd.DataFrame:
-    # Required / key shared fields from reviewer note
     acc_class = _find_col(df, ["Accum_Class"])
     acc = _find_col(df, ["Accum"])
     acc_se = _find_col(df, ["Accum_SE"])
@@ -105,7 +104,6 @@ def _keep_only_shared_core(df: pd.DataFrame) -> pd.DataFrame:
     if acc_se is not None:
         keep.append(acc_se)
 
-    # Keep a simple identifier if present (optional)
     id_col = _find_col(df, ["Compound", "Compound_ID", "ID", "Name", "compound", "compound_id"])
     if id_col is not None and id_col not in keep:
         keep.append(id_col)
@@ -116,7 +114,6 @@ def _keep_only_shared_core(df: pd.DataFrame) -> pd.DataFrame:
 
     out = df.loc[:, keep].copy()
 
-    # Normalize final names
     rename = {smiles_col: "SMILES"}
     if acc_class is not None:
         rename[acc_class] = "Accum_Class"
@@ -138,13 +135,9 @@ def build_consolidated_dataset() -> pd.DataFrame:
 
     all_df = pd.concat(dfs, ignore_index=True)
 
-    # Basic cleaning
     all_df = all_df.dropna(subset=["Accum", "SMILES"]).reset_index(drop=True)
-
-    # Remove duplicates across tables (same compound can appear multiple times)
     all_df = all_df.drop_duplicates(subset=["SMILES"]).reset_index(drop=True)
 
-    # Recalculate descriptors uniformly using RDKit
     desc_rows = []
     bad = 0
     for smi in all_df["SMILES"].tolist():
@@ -158,7 +151,6 @@ def build_consolidated_dataset() -> pd.DataFrame:
     desc_df = pd.DataFrame(desc_rows)
     out = pd.concat([all_df.reset_index(drop=True), desc_df], axis=1)
 
-    # Drop invalid SMILES rows.
     out = out.dropna(subset=[FEATURE_COLUMNS[0]]).reset_index(drop=True)
 
     print("=== Consolidation summary (Tables 1–4) ===")
@@ -176,45 +168,130 @@ def build_consolidated_dataset() -> pd.DataFrame:
 
 
 def _build_accum_stratify_labels(df: pd.DataFrame, max_bins: int = 5) -> pd.Series | None:
-    """Create stratification labels from the Accum distribution."""
+    """
+    Create stratification labels from the Accum distribution.
+    Returns string labels if a valid qcut split was found, otherwise None.
+    """
     if "Accum" not in df.columns or len(df) < 4:
+        print("\n[Stratify] Could not build Accum bins.")
+        print("Reason: missing 'Accum' column or dataframe has fewer than 4 rows.")
         return None
 
+    print("\n=== Attempting stratification from Accum ===")
+    print("Rows available:", len(df))
+    print("Requested maximum number of bins:", max_bins)
+
     for n_bins in range(max_bins, 1, -1):
+        print(f"\n[Stratify] Trying qcut with {n_bins} bins...")
+
         try:
             labels = pd.qcut(df["Accum"], q=n_bins, duplicates="drop")
-        except ValueError:
+        except ValueError as e:
+            print(f"[Stratify] qcut failed for {n_bins} bins: {e}")
             continue
 
-        counts = labels.value_counts(dropna=False)
-        if len(counts) >= 2 and counts.min() >= 2:
-            return labels.astype(str)
+        counts = labels.value_counts(dropna=False).sort_index()
 
+        print("[Stratify] Bin counts:")
+        print(counts)
+
+        if len(counts) < 2:
+            print("[Stratify] Rejected: fewer than 2 non-empty bins.")
+            continue
+
+        if counts.min() < 2:
+            print("[Stratify] Rejected: at least one bin has fewer than 2 samples.")
+            continue
+
+        print(f"[Stratify] Accepted with {len(counts)} bins.")
+        print("[Stratify] Relative frequencies:")
+        print((counts / len(df)).sort_index())
+
+        return labels.astype(str)
+
+    print("\n[Stratify] Failed to create valid Accum-based stratification labels.")
     return None
 
 
+def _print_split_label_distribution(full_labels: pd.Series, train_labels: pd.Series, test_labels: pd.Series) -> None:
+    """
+    Print label counts and proportions in full/train/test splits.
+    """
+    print("\n=== Stratification label distribution check ===")
+
+    full_counts = full_labels.value_counts(dropna=False).sort_index()
+    train_counts = train_labels.value_counts(dropna=False).sort_index()
+    test_counts = test_labels.value_counts(dropna=False).sort_index()
+
+    all_labels = sorted(set(full_counts.index) | set(train_counts.index) | set(test_counts.index))
+
+    summary = pd.DataFrame(index=all_labels)
+    summary["full_count"] = full_counts.reindex(all_labels, fill_value=0)
+    summary["train_count"] = train_counts.reindex(all_labels, fill_value=0)
+    summary["test_count"] = test_counts.reindex(all_labels, fill_value=0)
+
+    summary["full_ratio"] = (summary["full_count"] / summary["full_count"].sum()).round(4)
+    summary["train_ratio"] = (summary["train_count"] / summary["train_count"].sum()).round(4)
+    summary["test_ratio"] = (summary["test_count"] / summary["test_count"].sum()).round(4)
+
+    print(summary)
+
+
 def split_dataframe(df: pd.DataFrame):
-    """Split the consolidated dataframe into train and test sets."""
+    """
+    Split the consolidated dataframe into train and test sets.
+    """
     stratify = _build_accum_stratify_labels(df)
+    stratify_name = None
 
-    if stratify is None and "Accum_Class" in df.columns:
-        vc = df["Accum_Class"].value_counts(dropna=False)
+    if stratify is not None:
+        stratify_name = "Accum qcut bins"
+        print("\n[Split] Using stratify based on Accum qcut bins.")
+
+    elif "Accum_Class" in df.columns:
+        vc = df["Accum_Class"].value_counts(dropna=False).sort_index()
+
+        print("\n=== Attempting fallback stratification from Accum_Class ===")
+        print(vc)
+
         if len(vc) >= 2 and vc.min() >= 2:
-            stratify = df["Accum_Class"]
+            stratify = df["Accum_Class"].astype(str)
+            stratify_name = "Accum_Class"
+            print("[Split] Using stratify based on Accum_Class.")
+        else:
+            print("[Split] Accum_Class fallback rejected.")
+            print("Reason: need at least 2 classes and at least 2 samples in each class.")
 
-    train_df, test_df = train_test_split(
+    if stratify is None:
+        print("\n[Split] No valid stratification labels found.")
+        print("[Split] train_test_split will run WITHOUT stratify.")
+        train_df, test_df = train_test_split(
+            df,
+            test_size=TEST_FRAC,
+            random_state=SEED,
+            shuffle=True
+        )
+        return train_df, test_df
+
+    train_df, test_df, train_labels, test_labels = train_test_split(
         df,
+        stratify,
         test_size=TEST_FRAC,
         random_state=SEED,
         shuffle=True,
         stratify=stratify
     )
 
+    print(f"\n[Split] Stratification source used: {stratify_name}")
+    _print_split_label_distribution(stratify.astype(str), train_labels.astype(str), test_labels.astype(str))
+
     return train_df, test_df
 
 
 def get_regression_split():
-    """Build the dataset and return feature and target splits for regression."""
+    """
+    Build the dataset and return feature and target splits for regression.
+    """
     df = build_consolidated_dataset()
     train_df, test_df = split_dataframe(df)
 
@@ -227,7 +304,9 @@ def get_regression_split():
 
 
 def split_and_save(df: pd.DataFrame) -> None:
-    """Split the dataframe and save the consolidated and split outputs."""
+    """
+    Split the dataframe and save the consolidated and split outputs.
+    """
     train_df, test_df = split_dataframe(df)
 
     print("\n=== Split summary (Tables 1–4 consolidated) ===")
@@ -235,9 +314,22 @@ def split_and_save(df: pd.DataFrame) -> None:
     print("Train:", len(train_df), f"({len(train_df)/len(df)*100:.1f}%)")
     print("Test :", len(test_df), f"({len(test_df)/len(df)*100:.1f}%)")
 
-    print("\nTarget stats (Accum):")
-    print("Train describe:\n", train_df["Accum"].describe())
-    print("\nTest describe:\n", test_df["Accum"].describe())
+    print("\n=== Accum describe: full dataset ===")
+    print(df["Accum"].describe())
+
+    print("\n=== Accum describe: train ===")
+    print(train_df["Accum"].describe())
+
+    print("\n=== Accum describe: test ===")
+    print(test_df["Accum"].describe())
+
+    print("\n=== Accum quantiles comparison ===")
+    quantiles = pd.DataFrame({
+        "full": df["Accum"].quantile([0.00, 0.25, 0.50, 0.75, 1.00]),
+        "train": train_df["Accum"].quantile([0.00, 0.25, 0.50, 0.75, 1.00]),
+        "test": test_df["Accum"].quantile([0.00, 0.25, 0.50, 0.75, 1.00]),
+    })
+    print(quantiles)
 
     df.to_csv(CONSOLIDATED_OUT_CSV, index=False)
     df.to_pickle(CONSOLIDATED_OUT_PKL)

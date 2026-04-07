@@ -44,16 +44,7 @@ def main():
     plt.tight_layout()
     plt.show()
 
-    plt.figure(figsize=(6, 4))
-    plt.hist(df["Accum"].dropna(), bins=30)
-    plt.yscale("log")
-    plt.xlabel("Accum")
-    plt.ylabel("Count (log scale)")
-    plt.title("Accum distribution (log count)")
-    plt.tight_layout()
-    plt.show()
-
-    for xcol in ["MolWt", "LogP", "TPSA"]:
+    for xcol in ["LogP"]:
         if xcol in df.columns:
             plt.figure(figsize=(6, 4))
             plt.scatter(df[xcol], df["Accum"], alpha=0.7)

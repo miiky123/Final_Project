@@ -104,21 +104,6 @@ def plot_accum_distribution(train_df: pd.DataFrame, test_df: pd.DataFrame):
     fig.tight_layout()
     plt.show()
 
-    plt.figure(figsize=(7, 5))
-    plt.boxplot(
-        [train_accum, test_accum],
-        tick_labels=["Train", "Test"],
-        patch_artist=True,
-        boxprops={"facecolor": "#DCE6F2", "edgecolor": "#4C72B0"},
-        medianprops={"color": "#1F1F1F", "linewidth": 1.8},
-        whiskerprops={"color": "#4C72B0"},
-        capprops={"color": "#4C72B0"},
-    )
-    plt.ylabel("Accum")
-    plt.title("Train vs Test Accum Distribution (boxplot)")
-    plt.tight_layout()
-    plt.show()
-
 
 def main():
     train_df, test_df = _load_split_data()

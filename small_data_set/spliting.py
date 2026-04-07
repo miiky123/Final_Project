@@ -10,6 +10,7 @@ SEED = 42
 TEST_FRAC = 0.20
 
 DATA_DIR = "small_data_set/data"
+REVIEW_DIR = "small_data_set/smiles_review"
 TABLES = [1, 2, 3, 4]
 DESCRIPTOR_FUNCTIONS = dict(Descriptors._descList)
 FEATURE_COLUMNS = list(DESCRIPTOR_FUNCTIONS.keys())
@@ -73,10 +74,13 @@ def _compute_rdkit_descriptors(smiles: str) -> dict | None:
 
 
 def _load_one_table(table_num: int) -> pd.DataFrame:
-    path = os.path.join(DATA_DIR, f"table{table_num}.csv")
+    fixed_review_path = os.path.join(REVIEW_DIR, f"table{table_num}_fixed_review.csv")
+    raw_path = os.path.join(DATA_DIR, f"table{table_num}.csv")
+    path = fixed_review_path if os.path.exists(fixed_review_path) else raw_path
     df = pd.read_csv(path)
     df = _norm_cols(df)
     df["SourceTable"] = f"Table{table_num}"
+    df["SourceFile"] = path
     return df
 
 
@@ -107,6 +111,8 @@ def _keep_only_shared_core(df: pd.DataFrame) -> pd.DataFrame:
         keep.append(id_col)
 
     keep.append("SourceTable")
+    if "SourceFile" in df.columns:
+        keep.append("SourceFile")
 
     out = df.loc[:, keep].copy()
 
@@ -159,6 +165,10 @@ def build_consolidated_dataset() -> pd.DataFrame:
     print("Unique SMILES:", out["SMILES"].nunique())
     print("Final rows after RDKit + de-dup:", len(out))
     print("RDKit 1D/2D descriptor count:", len(FEATURE_COLUMNS))
+    if "SourceFile" in out.columns:
+        print("Loaded table files:")
+        for src in sorted(out["SourceFile"].dropna().unique()):
+            print(" -", src)
     if bad > 0:
         print("Invalid SMILES encountered:", bad)
 

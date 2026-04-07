@@ -10,14 +10,32 @@ for path in [PROJECT_ROOT]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from small_data_set.spliting import get_classification_split as get_article_classification_split
+from small_data_set.spliting import FEATURE_COLUMNS, build_consolidated_dataset, split_dataframe
 from big_data_set.spliting import get_classification_split as get_big_classification_split
+
+
+def get_small_classification_split():
+    """Build the small dataset and return classification-ready train/test splits."""
+    df = build_consolidated_dataset()
+
+    if "Accum_Class" not in df.columns:
+        raise ValueError("Small dataset does not contain 'Accum_Class' for classification.")
+
+    df = df.dropna(subset=["Accum_Class"]).reset_index(drop=True)
+    train_df, test_df = split_dataframe(df)
+
+    X_train = train_df[FEATURE_COLUMNS]
+    X_test = test_df[FEATURE_COLUMNS]
+    y_train = train_df["Accum_Class"]
+    y_test = test_df["Accum_Class"]
+
+    return X_train, X_test, y_train, y_test
 
 
 def load_classification_split(dataset_name="smalldata"):
     """Load classification data from the requested dataset source."""
     if dataset_name in {"smalldata", "article"}:
-        return get_article_classification_split()
+        return get_small_classification_split()
     if dataset_name == "big":
         return get_big_classification_split()
     raise ValueError("dataset_name must be 'smalldata' or 'big'.")

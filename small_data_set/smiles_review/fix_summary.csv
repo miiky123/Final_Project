@@ -1,0 +1,5 @@
+table,smiles_col,rows_changed,invalid_became_valid,still_invalid_after_fix,output
+Table1,smiles,8,8,0,small_data_set/smiles_review/table1_fixed_review.csv
+Table2,smiles,33,33,0,small_data_set/smiles_review/table2_fixed_review.csv
+Table3,smiles,23,22,1,small_data_set/smiles_review/table3_fixed_review.csv
+Table4,mol,0,0,0,small_data_set/smiles_review/table4_fixed_review.csv

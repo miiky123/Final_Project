@@ -2,6 +2,7 @@ import os
 import sys
 
 import numpy as np
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import cross_val_score
 
@@ -12,19 +13,11 @@ if PROJECT_ROOT not in sys.path:
 
 from small_data_set.spliting import get_regression_split
 
-try:
-    from xgboost import XGBRegressor
-except ImportError as exc:
-    raise ImportError(
-        "xgboost is not installed. Install it with `pip install xgboost` to run this model."
-    ) from exc
-
 
 def print_regression_metrics(split_name, y_true, y_pred, q2_val=None):
     """Print regression metrics for one split."""
     print(f"\n=== {split_name} Metrics ===")
-    if q2_val is not None:
-        print(f"Q^2 (Cross-Validation R2): {q2_val:.4f}")
+    
 
     score_label = "Q2 Score" if split_name.lower() == "test" else "R2 Score (Fit)"
     print(f"{score_label}:", r2_score(y_true, y_pred))
@@ -34,25 +27,20 @@ def print_regression_metrics(split_name, y_true, y_pred, q2_val=None):
 
 
 def train_and_evaluate():
-    """Train an XGBoost regressor and evaluate using R^2 and Q^2."""
+    """Train a Random Forest regressor and evaluate using R^2 and Q^2."""
     X_train, X_test, y_train, y_test = get_regression_split()
 
-    print("=== XGBoost Regression ===")
+    print("=== Random Forest Regression ===")
     print("X_train shape:", X_train.shape)
     print("X_test shape :", X_test.shape)
 
-    model = XGBRegressor(
-        n_estimators=300,
-        max_depth=3,
-        learning_rate=0.03,
-        min_child_weight=5,
-        subsample=0.6,
-        colsample_bytree=0.5,
-        reg_alpha=1.0,
-        reg_lambda=10.0,
-        gamma=0.3,
-        objective="reg:squarederror",
+    model = RandomForestRegressor(
+        n_estimators=500,
+        max_depth=None,
+        min_samples_split=2,
+        min_samples_leaf=1,
         random_state=42,
+        n_jobs=-1,
     )
 
     print("\nCalculating Q^2 (5-Fold CV)...")

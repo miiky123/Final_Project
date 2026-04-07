@@ -22,22 +22,19 @@ SOLVENT_CONFIGS = {
     "octanol": {"num_confs": 30, "seed": 33},
 }
 
+# 10 descriptors per solvent, following the mentor's guideline:
+# 3 shape + 2 normalized principal ratios + 2 principal moments + 3 charge summaries
 BASE_3D_COLUMNS = [
     "RadiusOfGyration",
     "Asphericity",
-    "Eccentricity",
-    "InertialShapeFactor",
+    "SpherocityIndex",
     "NPR1",
     "NPR2",
     "PMI1",
     "PMI2",
-    "PMI3",
-    "SpherocityIndex",
     "ChargeMean",
     "ChargeMax",
     "ChargeMin",
-    "AbsChargeMean",
-    "AbsChargeMax",
 ]
 
 THREED_FEATURE_COLUMNS = [
@@ -52,10 +49,9 @@ def _prepare_mol(smiles: str):
     Build a protonated/standardized RDKit molecule from a SMILES string.
 
     Note:
-    RDKit does not natively run true solvent-dependent molecular dynamics.
-    The code below generates separate conformer ensembles that are labeled by
-    solvent name, but the conformer generation itself is still an RDKit/MMFF
-    approximation rather than an explicit solvent simulation.
+    RDKit does not run true explicit-solvent molecular dynamics here.
+    The code generates separate conformer ensembles labeled by solvent name,
+    but the actual conformer generation remains an RDKit/MMFF approximation.
     """
     if not isinstance(smiles, str) or not smiles.strip():
         return None
@@ -67,8 +63,8 @@ def _prepare_mol(smiles: str):
     mol = rdMolStandardize.Cleanup(mol)
     mol = REIONIZER.reionize(mol)
     mol = Chem.AddHs(mol)
-
     return mol
+
 
 
 def _embed_and_optimize_conformers(mol, num_confs: int, random_seed: int):
@@ -109,12 +105,13 @@ def _embed_and_optimize_conformers(mol, num_confs: int, random_seed: int):
     return work_mol, conf_ids
 
 
+
 def _compute_charge_summary(mol):
     """
     Compute atom-level Gasteiger charge summary statistics.
-    These are identical across conformers of the same protonation state, but we
-    keep them in the 3D feature block because the mentor asked to enrich the 3D
-    stage with electrostatic information as well.
+    Charge values are not conformer-specific in RDKit, but they are included
+    here because the mentor explicitly asked to enrich the representation with
+    electrostatic information.
     """
     try:
         AllChem.ComputeGasteigerCharges(mol)
@@ -123,8 +120,6 @@ def _compute_charge_summary(mol):
             "ChargeMean": np.nan,
             "ChargeMax": np.nan,
             "ChargeMin": np.nan,
-            "AbsChargeMean": np.nan,
-            "AbsChargeMax": np.nan,
         }
 
     charges = []
@@ -133,6 +128,7 @@ def _compute_charge_summary(mol):
             charge = float(atom.GetProp("_GasteigerCharge"))
         except Exception:
             charge = np.nan
+
         if np.isfinite(charge):
             charges.append(charge)
 
@@ -141,37 +137,30 @@ def _compute_charge_summary(mol):
             "ChargeMean": np.nan,
             "ChargeMax": np.nan,
             "ChargeMin": np.nan,
-            "AbsChargeMean": np.nan,
-            "AbsChargeMax": np.nan,
         }
 
     charges = np.asarray(charges, dtype=float)
-    abs_charges = np.abs(charges)
     return {
         "ChargeMean": float(np.mean(charges)),
         "ChargeMax": float(np.max(charges)),
         "ChargeMin": float(np.min(charges)),
-        "AbsChargeMean": float(np.mean(abs_charges)),
-        "AbsChargeMax": float(np.max(abs_charges)),
     }
+
 
 
 def _compute_3d_descriptors_for_conf(mol, conf_id: int):
     """
-    Compute a compact set of 3D shape descriptors for one conformer.
+    Compute one compact 3D descriptor set for a single conformer.
     """
     values = {}
     funcs = {
         "RadiusOfGyration": rdMolDescriptors.CalcRadiusOfGyration,
         "Asphericity": rdMolDescriptors.CalcAsphericity,
-        "Eccentricity": rdMolDescriptors.CalcEccentricity,
-        "InertialShapeFactor": rdMolDescriptors.CalcInertialShapeFactor,
+        "SpherocityIndex": rdMolDescriptors.CalcSpherocityIndex,
         "NPR1": rdMolDescriptors.CalcNPR1,
         "NPR2": rdMolDescriptors.CalcNPR2,
         "PMI1": rdMolDescriptors.CalcPMI1,
         "PMI2": rdMolDescriptors.CalcPMI2,
-        "PMI3": rdMolDescriptors.CalcPMI3,
-        "SpherocityIndex": rdMolDescriptors.CalcSpherocityIndex,
     }
 
     for name, func in funcs.items():
@@ -184,9 +173,10 @@ def _compute_3d_descriptors_for_conf(mol, conf_id: int):
     return values
 
 
+
 def _average_descriptor_dicts(descriptor_rows, column_names):
     """
-    Average descriptor values over all conformers in one ensemble.
+    Average descriptor values over all conformers in one solvent ensemble.
     """
     if not descriptor_rows:
         return {name: np.nan for name in column_names}
@@ -194,6 +184,7 @@ def _average_descriptor_dicts(descriptor_rows, column_names):
     frame = pd.DataFrame(descriptor_rows)
     frame = frame.reindex(columns=column_names)
     return frame.mean(axis=0, skipna=True).to_dict()
+
 
 
 def compute_3d_descriptor_block(smiles: str):
@@ -224,6 +215,7 @@ def compute_3d_descriptor_block(smiles: str):
     return output
 
 
+
 def add_3d_descriptors_to_dataframe(df: pd.DataFrame, smiles_col: str = "SMILES"):
     """
     Compute 3D descriptors for every molecule in the dataframe and append them.
@@ -241,6 +233,7 @@ def add_3d_descriptors_to_dataframe(df: pd.DataFrame, smiles_col: str = "SMILES"
     desc_df = desc_df.reindex(columns=THREED_FEATURE_COLUMNS)
 
     return pd.concat([df.reset_index(drop=True), desc_df.reset_index(drop=True)], axis=1)
+
 
 
 def main():

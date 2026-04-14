@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import RepeatedKFold, cross_val_score, train_test_split
 
 try:
     from xgboost import XGBRegressor
@@ -12,12 +12,24 @@ except ImportError as exc:
     ) from exc
 
 
+# =============================================================================
+# Paths
+# =============================================================================
+
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
 DATA_PATH = os.path.join(PROJECT_ROOT, "small_data_set", "data", "tables1_4_with_3d.csv")
 
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
 SEED = 42
 TEST_FRAC = 0.20
+N_SPLITS = 5
+N_REPEATS = 10
+N_OUTLIERS_TO_REMOVE = 3
 
 META_COLS = [
     "SMILES",
@@ -29,14 +41,23 @@ META_COLS = [
     "SourceFile",
 ]
 
-OUTLIER_SMILES = [
-    "Fc1c(N2CC[NH2+]CC2)cc2N(C3CC3)C=C(C(=O)[O-])C(=O)c2c1",
-    "O=C(N)C=1C(=O)[C@@H]([NH+](C)C)[C@H]2[C@@](O)(C=1[O-])C(=O)C1=C([O-])c3c(O)cccc3[C@](O)(C)[C@H]1C2",
-    "O(C)c1c(O)c2c(cc1)CC1[N+](C)CCC32C1CC(O)C([N+])C3",
-]
+
+# =============================================================================
+# Helpers
+# =============================================================================
+
+def get_feature_columns(df: pd.DataFrame) -> list[str]:
+    """
+    Use all descriptors except metadata columns.
+    This includes the original 1D/2D descriptors and the added 3D descriptors.
+    """
+    return [col for col in df.columns if col not in META_COLS]
 
 
-def build_accum_stratify_labels(df: pd.DataFrame, max_bins: int = 5):
+def build_accum_stratify_labels(df: pd.DataFrame, max_bins: int = 5) -> pd.Series | None:
+    """
+    Create stratification labels from the Accum distribution using qcut.
+    """
     if "Accum" not in df.columns or len(df) < 4:
         return None
 
@@ -57,16 +78,29 @@ def build_accum_stratify_labels(df: pd.DataFrame, max_bins: int = 5):
     return None
 
 
-def get_feature_columns(df: pd.DataFrame):
-    feature_cols = []
-    for col in df.columns:
-        if col in META_COLS:
-            continue
-        feature_cols.append(col)
-    return feature_cols
+def get_model(seed: int) -> XGBRegressor:
+    """
+    Return the final XGBoost model.
+    """
+    return XGBRegressor(
+        n_estimators=300,
+        max_depth=3,
+        learning_rate=0.03,
+        min_child_weight=5,
+        subsample=0.6,
+        colsample_bytree=0.5,
+        reg_alpha=1.0,
+        reg_lambda=10.0,
+        gamma=0.3,
+        objective="reg:squarederror",
+        random_state=seed,
+    )
 
 
-def print_regression_metrics(split_name: str, y_true, y_pred, q2_val=None):
+def print_regression_metrics(split_name: str, y_true, y_pred, q2_val: float | None = None) -> None:
+    """
+    Print regression metrics for one split.
+    """
     print(f"\n=== {split_name} Metrics ===")
     if q2_val is not None:
         print(f"Q^2 (Cross-Validation R2): {q2_val:.4f}")
@@ -78,7 +112,14 @@ def print_regression_metrics(split_name: str, y_true, y_pred, q2_val=None):
     print(f"RMSE: {np.sqrt(mean_squared_error(y_true, y_pred)):.4f}")
 
 
-def load_clean_regression_dataset():
+# =============================================================================
+# Data loading
+# =============================================================================
+
+def load_regression_dataset() -> tuple[pd.DataFrame, list[str]]:
+    """
+    Load the 1D/2D+3D regression table and return the dataframe and feature list.
+    """
     if not os.path.exists(DATA_PATH):
         raise FileNotFoundError(
             f"Could not find input dataset: {DATA_PATH}\n"
@@ -91,18 +132,13 @@ def load_clean_regression_dataset():
     df = df.drop_duplicates(subset=["SMILES"]).reset_index(drop=True)
     after_dedup_rows = len(df)
 
-    outlier_mask = df["SMILES"].isin(OUTLIER_SMILES)
-    removed_outliers = int(outlier_mask.sum())
-    df = df.loc[~outlier_mask].reset_index(drop=True)
-
     feature_cols = get_feature_columns(df)
     df = df.dropna(subset=feature_cols + ["Accum"]).reset_index(drop=True)
 
-    print("=== Consolidation summary (clean 1D/2D + 3D regression table) ===")
+    print("=== Consolidation summary (1D/2D + 3D regression table) ===")
     print("Input file:", DATA_PATH)
     print("Rows before de-dup:", initial_rows)
     print("Rows after de-dup :", after_dedup_rows)
-    print("Outliers removed  :", removed_outliers)
     print("Final rows used   :", len(df))
     print("Unique SMILES     :", df["SMILES"].nunique())
     print("Feature count     :", len(feature_cols))
@@ -116,14 +152,106 @@ def load_clean_regression_dataset():
     return df, feature_cols
 
 
-def get_regression_split():
-    df, feature_cols = load_clean_regression_dataset()
+# =============================================================================
+# Outlier detection
+# =============================================================================
 
-    stratify = build_accum_stratify_labels(df)
+def find_top_outliers(df: pd.DataFrame, feature_cols: list[str], n_outliers: int = 3) -> pd.DataFrame:
+    """
+    Identify the most problematic molecules using repeated 5-fold CV.
+    Molecules are ranked by mean absolute prediction error across folds in which
+    they appeared in the test set.
+    """
+    X = df[feature_cols]
+    y = df["Accum"]
+
+    rkf = RepeatedKFold(
+        n_splits=N_SPLITS,
+        n_repeats=N_REPEATS,
+        random_state=SEED,
+    )
+
+    prediction_rows = []
+
+    print("\n=== Identifying outliers using repeated 5-fold CV ===")
+    print(f"RepeatedKFold runs: {N_SPLITS * N_REPEATS}")
+
+    for fold_idx, (train_idx, test_idx) in enumerate(rkf.split(X), start=1):
+        X_train = X.iloc[train_idx]
+        X_test = X.iloc[test_idx]
+        y_train = y.iloc[train_idx]
+
+        model = get_model(SEED + fold_idx)
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_test)
+        test_meta = df.iloc[test_idx][["SMILES", "Compound_ID", "SourceTable", "Accum"]].copy()
+
+        for local_i, (_, row) in enumerate(test_meta.iterrows()):
+            actual = float(row["Accum"])
+            pred = float(y_pred[local_i])
+            error = pred - actual
+
+            prediction_rows.append({
+                "fold": fold_idx,
+                "SMILES": row["SMILES"],
+                "Compound_ID": row["Compound_ID"],
+                "SourceTable": row["SourceTable"],
+                "actual_accum": actual,
+                "predicted_accum": pred,
+                "error": error,
+                "abs_error": abs(error),
+                "sq_error": error ** 2,
+            })
+
+    pred_df = pd.DataFrame(prediction_rows)
+
+    summary_df = (
+        pred_df
+        .groupby(["SMILES", "Compound_ID", "SourceTable"], dropna=False)
+        .agg(
+            times_seen=("SMILES", "size"),
+            mean_actual_accum=("actual_accum", "mean"),
+            mean_predicted_accum=("predicted_accum", "mean"),
+            mean_error=("error", "mean"),
+            mean_abs_error=("abs_error", "mean"),
+            median_abs_error=("abs_error", "median"),
+            max_abs_error=("abs_error", "max"),
+            rmse=("sq_error", lambda x: float(np.sqrt(np.mean(x)))),
+        )
+        .reset_index()
+        .sort_values(by=["mean_abs_error", "rmse", "max_abs_error"], ascending=[False, False, False])
+        .reset_index(drop=True)
+    )
+
+    top_outliers = summary_df.head(n_outliers).copy()
+
+    print("\nTop outliers chosen for removal:")
+    print(top_outliers.to_string(index=False))
+
+    return top_outliers
+
+
+# =============================================================================
+# Final train/test evaluation
+# =============================================================================
+
+def get_clean_regression_split(df: pd.DataFrame, feature_cols: list[str], outlier_smiles: list[str]):
+    """
+    Remove the selected outliers and create the final train/test split.
+    """
+    clean_df = df.loc[~df["SMILES"].isin(outlier_smiles)].reset_index(drop=True)
+
+    print("\n=== Cleaning summary ===")
+    print("Outliers removed  :", len(outlier_smiles))
+    print("Final rows used   :", len(clean_df))
+    print("Unique SMILES     :", clean_df["SMILES"].nunique())
+
+    stratify = build_accum_stratify_labels(clean_df)
 
     if stratify is None:
         train_df, test_df = train_test_split(
-            df,
+            clean_df,
             test_size=TEST_FRAC,
             random_state=SEED,
             shuffle=True,
@@ -131,7 +259,7 @@ def get_regression_split():
         print("\n[Split] Running without stratify.")
     else:
         train_df, test_df = train_test_split(
-            df,
+            clean_df,
             test_size=TEST_FRAC,
             random_state=SEED,
             shuffle=True,
@@ -148,25 +276,26 @@ def get_regression_split():
 
 
 def train_and_evaluate():
-    X_train, X_test, y_train, y_test = get_regression_split()
+    """
+    Full final pipeline:
+    1. Load 1D/2D + 3D descriptors
+    2. Detect the 3 worst outliers using repeated 5-fold CV
+    3. Remove them
+    4. Train the final XGBoost model
+    5. Report train/test metrics and training-set CV Q²
+    """
+    df, feature_cols = load_regression_dataset()
+
+    top_outliers = find_top_outliers(df, feature_cols, n_outliers=N_OUTLIERS_TO_REMOVE)
+    outlier_smiles = top_outliers["SMILES"].tolist()
+
+    X_train, X_test, y_train, y_test = get_clean_regression_split(df, feature_cols, outlier_smiles)
 
     print("\n=== Final XGBoost Regression ===")
     print("X_train shape:", X_train.shape)
     print("X_test shape :", X_test.shape)
 
-    model = XGBRegressor(
-        n_estimators=300,
-        max_depth=3,
-        learning_rate=0.03,
-        min_child_weight=5,
-        subsample=0.6,
-        colsample_bytree=0.5,
-        reg_alpha=1.0,
-        reg_lambda=10.0,
-        gamma=0.3,
-        objective="reg:squarederror",
-        random_state=SEED,
-    )
+    model = get_model(SEED)
 
     print("\nCalculating Q^2 (5-Fold CV) on training set...")
     q2_scores = cross_val_score(model, X_train, y_train, cv=5, scoring="r2")

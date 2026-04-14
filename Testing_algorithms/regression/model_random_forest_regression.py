@@ -11,7 +11,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from small_data_set.spliting import get_regression_split
+from small_data_set.spliting_with_3D import get_regression_split
 
 
 def print_regression_metrics(split_name, y_true, y_pred, q2_val=None):

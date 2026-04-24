@@ -30,6 +30,7 @@ TEST_FRAC = 0.20
 N_SPLITS = 5
 N_REPEATS = 10
 N_OUTLIERS_TO_REMOVE = 3
+CORRELATION_THRESHOLD = 0.90
 
 META_COLS = [
     "SMILES",
@@ -52,6 +53,35 @@ def get_feature_columns(df: pd.DataFrame) -> list[str]:
     This includes the original 1D/2D descriptors and the added 3D descriptors.
     """
     return [col for col in df.columns if col not in META_COLS]
+
+
+def remove_highly_correlated_features(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    threshold: float = 0.90,
+) -> list[str]:
+    """
+    Remove highly correlated features based on Pearson correlation.
+    """
+    print("\n=== Removing highly correlated features ===")
+
+    X = df[feature_cols]
+    corr_matrix = X.corr().abs()
+    upper = corr_matrix.where(~np.tril(np.ones(corr_matrix.shape)).astype(bool))
+
+    to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
+    filtered_features = [col for col in feature_cols if col not in to_drop]
+
+    print("Original feature count:", len(feature_cols))
+    print(f"Removed features with correlation > {threshold}:", len(to_drop))
+    print("Remaining feature count:", len(filtered_features))
+
+    if len(to_drop) > 0:
+        print("\nRemoved correlated features:")
+        for col in to_drop:
+            print("-", col)
+
+    return filtered_features
 
 
 def build_accum_stratify_labels(df: pd.DataFrame, max_bins: int = 5) -> pd.Series | None:
@@ -279,12 +309,19 @@ def train_and_evaluate():
     """
     Full final pipeline:
     1. Load 1D/2D + 3D descriptors
-    2. Detect the 3 worst outliers using repeated 5-fold CV
-    3. Remove them
-    4. Train the final XGBoost model
-    5. Report train/test metrics and training-set CV Q²
+    2. Remove highly correlated descriptors
+    3. Detect the 3 worst outliers using repeated 5-fold CV
+    4. Remove them
+    5. Train the final XGBoost model
+    6. Report train/test metrics and training-set CV Q²
     """
     df, feature_cols = load_regression_dataset()
+
+    feature_cols = remove_highly_correlated_features(
+        df,
+        feature_cols,
+        threshold=CORRELATION_THRESHOLD,
+    )
 
     top_outliers = find_top_outliers(df, feature_cols, n_outliers=N_OUTLIERS_TO_REMOVE)
     outlier_smiles = top_outliers["SMILES"].tolist()

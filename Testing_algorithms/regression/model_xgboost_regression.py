@@ -30,7 +30,8 @@ TEST_FRAC = 0.20
 N_SPLITS = 5
 N_REPEATS = 10
 N_OUTLIERS_TO_REMOVE = 3
-CORRELATION_THRESHOLD = 0.90
+CORRELATION_THRESHOLD = 0.85
+TOP_K_FEATURES = 70
 
 META_COLS = [
     "SMILES",
@@ -46,6 +47,37 @@ META_COLS = [
 # =============================================================================
 # Helpers
 # =============================================================================
+
+def select_top_features_by_importance(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    top_k: int,
+    seed: int,
+):
+    """
+    Select the top K most important features using XGBoost feature importance.
+    """
+    print("\n=== Selecting top features by XGBoost importance ===")
+
+    model = get_model(seed)
+    model.fit(X_train, y_train)
+
+    importances = pd.Series(
+        model.feature_importances_,
+        index=X_train.columns,
+    ).sort_values(ascending=False)
+
+    selected_features = importances.head(top_k).index.tolist()
+
+    print("Original feature count:", X_train.shape[1])
+    print("Selected feature count:", len(selected_features))
+
+    print("\nTop selected features:")
+    for feature in selected_features:
+        print("-", feature)
+
+    return X_train[selected_features], X_test[selected_features], selected_features
 
 def get_feature_columns(df: pd.DataFrame) -> list[str]:
     """
@@ -327,7 +359,13 @@ def train_and_evaluate():
     outlier_smiles = top_outliers["SMILES"].tolist()
 
     X_train, X_test, y_train, y_test = get_clean_regression_split(df, feature_cols, outlier_smiles)
-
+    X_train, X_test, selected_features = select_top_features_by_importance(
+        X_train,
+        y_train,
+        X_test,
+        top_k=TOP_K_FEATURES,
+        seed=SEED,
+    )
     print("\n=== Final XGBoost Regression ===")
     print("X_train shape:", X_train.shape)
     print("X_test shape :", X_test.shape)

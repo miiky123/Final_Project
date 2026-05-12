@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -6,6 +7,13 @@ from sklearn.model_selection import train_test_split
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors
 from rdkit.Chem.MolStandardize import rdMolStandardize
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from small_data_set.smiles_corrections import apply_smiles_fixes
 
 SEED = 42
 TEST_FRAC = 0.20
@@ -141,6 +149,12 @@ def build_consolidated_dataset() -> pd.DataFrame:
         dfs.append(core)
 
     all_df = pd.concat(dfs, ignore_index=True)
+    all_df, fix_summary = apply_smiles_fixes(
+        all_df,
+        smiles_col="SMILES",
+        compound_id_col="Compound_ID",
+        source_table_col="SourceTable",
+    )
 
     all_df = all_df.dropna(subset=["Accum", "SMILES"]).reset_index(drop=True)
     all_df = all_df.drop_duplicates(subset=["SMILES"]).reset_index(drop=True)
@@ -164,6 +178,10 @@ def build_consolidated_dataset() -> pd.DataFrame:
     print("Unique SMILES:", out["SMILES"].nunique())
     print("Final rows after RDKit + de-dup:", len(out))
     print("RDKit 1D/2D descriptor count:", len(FEATURE_COLUMNS))
+    print(
+        "Applied SMILES fixes:",
+        f"{fix_summary['rows_replaced']} replaced, {fix_summary['rows_dropped']} dropped",
+    )
     if "SourceFile" in out.columns:
         print("Loaded table files:")
         for src in sorted(out["SourceFile"].dropna().unique()):

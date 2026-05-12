@@ -1,13 +1,13 @@
 smiles,name,Accum,Accum_SE,Accum_class,Molecular_weight,clogD7.4,RB,glob,PBF,pmi1_MW,Spectrum
-O=C(O[C@H]1[C@@H](O)[C@H](Oc2c(C)c3OC(=O)C(NC(=O)c4cc(C/C=C(\C)/C)c(O)cc4)=C([O-])c3cc2)OC(C)(C)[C@@H]1OC)N,novobiocin,119,21,Low,613,2.65,9,0.11,1.22,6.46,Gram-positive
-O([C@H]1[C@@H](C)[C@H](O[C@@H]2O[C@H](C)[C@@H](O)[C@@](OC)(C)C2)[C@@H](C)C(=O)O[C@H](CC)[C@](O)(C)[C@H](O)[C@@H](C)C(=O)[C@H](C)C[C@]1(O)C)[C@@H]1[C@@H](O)[C@H]([NH+](C)C)C[C@H](C)O1,erythromycin,235,73,Low,734,1.57,7,0.42,1.84,9.32,Gram-positive
-O=C(O[C@H]1[C@H](C)[C@H](O)[C@H](C)[C@@H](O)[C@@H](C)/C=C/C=C(\C)/C(=O)Nc2c(/C=N\N3CC[NH+](C)CC3)c(O)c3c(c(O)c(C)c4O[C@@](C)(C(=O)c34)O/C=C/[C@H](OC)[C@H]1C)c2O)C,rifampicin,213,9,Low,823,2.71,5,0.16,1.49,8.89,Gram-positive
-Clc1c2Oc3c(O[C@H]4[C@@H](O[C@@H]5O[C@@H](C)[C@H](O)[C@]([NH3+])(C)C5)[C@@H](O)[C@H](O)[C@@H](CO)O4)c4Oc5c(Cl)cc([C@@H](O)[C@H]6C(=O)N[C@H](C(=O)[O-])c7c(c(O)cc(O)c7)-c7c(O)ccc([C@H](C(=O)N6)NC(=O)[C@H](NC(=O)[C@H](CC(=O)N)NC(=O)[C@@H](NC(=O)[C@H]([NH2+]C)CC(C)C)[C@H](O)c(c1)cc2)c(c3)c4)c7)cc5,vancomycin,177,26,Low,1149,-8.48,13,0.26,2.15,18.76,Gram-positive
-O=C(N[C@H](C(=O)N[C@H]1[C@@H](C)OC(=O)[C@H](CC(=O)c2c(N)cccc2)NC(=O)[C@H]([C@@H](CC(=O)[O-])C)NC(=O)[C@@H](CO)NC(=O)CNC(=O)[C@H](CC(=O)[O-])NC(=O)[C@@H](C)NC(=O)[C@H](CC(=O)[O-])NC(=O)[C@H](CCC[NH3+])NC(=O)CNC1=O)CC(=O)[O-])[C@H](NC(=O)[C@@H](NC(=O)CCCCCCCCC)Cc1c2c([nH]c1)cccc2)CC(=O)N,daptomycin,206,85,Low,1621,-21.48,35,0.38,2.33,17.63,Gram-positive
-Cl[C@H]([C@@H](NC(=O)[C@H]1[N@@H+](C)C[C@H](CCC)C1)[C@@H]1[C@H](O)[C@H](O)[C@@H](O)[C@@H](SC)O1)C,clindamycin,221,19,Low,425,0.65,7,0.15,1.13,5.16,Gram-positive
-O=C(OCCCCCCCCC(=O)[O-])/C=C(\C[C@H]1[C@H](O)[C@H](O)[C@@H](C[C@H]2[C@H]([C@H]([C@@H](O)C)C)O2)CO1)/C,mupirocin,89,1,Low,501,-0.07,17,0.13,1.04,7.01,Gram-positive
-O=C([O-])/C(/CC/C=C(\C)/C)=C/1\[C@@H](OC(=O)C)C[C@]2(C)[C@]3(C)[C@@H]([C@H](O)C[C@@H]\12)[C@]1(C)[C@H]([C@H](C)[C@H](O)CC1)CC3,fusidic acid,52,5,Low,517,1.75,6,0.1,1.05,3.17,Gram-positive
-O=C(N[C@@H]1C(=O)N2[C@@H](C(=O)[O-])C(C)(C)S[C@H]12)[C@H]([NH3+])c1ccccc1,ampcillin,45,11,Low,349,-3.39,4,0.12,0.87,3.54,Gram-negative
-O=C(N)C=1C(=O)[C@@H]([NH+](C)C)[C@H]2[C@@](O)(C=1[O-])C(=O)C1=C([O-])c3c(O)cccc3[C@](O)(C)[C@H]1C2,tetracycline,1759,160,High,444,-2.84,2,0.2,1.11,4.11,Gram-negative
-Fc1c(N2CC[NH2+]CC2)cc2N(C3CC3)C=C(C(=O)[O-])C(=O)c2c1,ciprofloxacin,2263,286,High,331,-1.39,3,0.07,0.69,3.28,Gram-negative
-ClC(Cl)C(=O)N[C@@H]([C@H](O)c1ccc([N+](=O)[O-])cc1)CO,chloramphenicol,709,45,High,323,0.66,6,0.15,0.87,3.52,Gram-negative
+CC1=C(C=CC2=C1OC(=O)C(=C2O)NC(=O)C3=CC(=C(C=C3)O)CC=C(C)C)O[C@H]4[C@@H]([C@@H]([C@H](C(O4)(C)C)OC)OC(=O)N)O,novobiocin,119,21,Low,613,2.65,9,0.11,1.22,6.46,Gram-positive
+C[C@H]1[C@H](O)[C@@](OC)(C)C[C@@](O[C@H]([C@@H](C)C(O[C@H](CC)[C@]([C@H](O)[C@H]2C)(O)C)=O)[C@H](C)[C@@H](O[C@@]3([H])[C@H](O)[C@@H](N(C)C)C[C@@H](C)O3)[C@](C)(O)C[C@@H](C)C2=O)([H])O1,erythromycin,235,73,Low,734,1.57,7,0.42,1.84,9.32,Gram-positive
+C[C@H]1/C=C/C=C(\C(=O)NC2=C(C(=C3C(=C2O)C(=C(C4=C3C(=O)[C@](O4)(O/C=C/[C@@H]([C@H]([C@H]([C@@H]([C@@H]([C@@H]([C@H]1O)C)O)C)OC(=O)C)C)OC)C)C)O)O)/C=N/N5CCN(CC5)C)/C,rifampicin,213,9,Low,823,2.71,5,0.16,1.49,8.89,Gram-positive
+C[C@H]1[C@H]([C@@](C[C@@H](O1)O[C@@H]2[C@H]([C@@H]([C@H](O[C@H]2OC3=C4C=C5C=C3OC6=C(C=C(C=C6)[C@H]([C@H](C(=O)N[C@H](C(=O)N[C@H]5C(=O)N[C@@H]7C8=CC(=C(C=C8)O)C9=C(C=C(C=C9O)O)[C@H](NC(=O)[C@H]([C@@H](C1=CC(=C(O4)C=C1)Cl)O)NC7=O)C(=O)O)CC(=O)N)NC(=O)[C@@H](CC(C)C)NC)O)Cl)CO)O)O)(C)N)O,vancomycin,177,26,Low,1149,-8.48,13,0.26,2.15,18.76,Gram-positive
+CCCCCCCCCC(=O)N[C@@H](CC1=CNC2=CC=CC=C21)C(=O)N[C@H](CC(=O)N)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@H]3[C@H](OC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@H](NC(=O)CNC(=O)[C@@H](NC(=O)[C@H](NC(=O)[C@@H](NC(=O)[C@@H](NC(=O)CNC3=O)CCCN)CC(=O)O)C)CC(=O)O)CO)[C@H](C)CC(=O)O)CC(=O)C4=CC=CC=C4N)C,daptomycin,206,85,Low,1621,-21.48,35,0.38,2.33,17.63,Gram-positive
+CCC[C@@H]1C[C@H](N(C1)C)C(=O)N[C@@H]([C@@H]2[C@@H]([C@@H]([C@H]([C@H](O2)SC)O)O)O)[C@H](C)Cl,clindamycin,221,19,Low,425,0.65,7,0.15,1.13,5.16,Gram-positive
+C[C@H]([C@H]1[C@@H](O1)C[C@H]2CO[C@H]([C@@H]([C@@H]2O)O)C/C(=C/C(=O)OCCCCCCCCC(=O)O)/C)[C@H](C)O,mupirocin,89,1,Low,501,-0.07,17,0.13,1.04,7.01,Gram-positive
+C[C@H]1[C@@H]2CC[C@]3([C@H]([C@]2(CC[C@H]1O)C)[C@@H](C[C@@H]\4[C@@]3(C[C@@H](/C4=C(/CCC=C(C)C)\C(=O)O)OC(=O)C)C)O)C,fusidic acid,52,5,Low,517,1.75,6,0.1,1.05,3.17,Gram-positive
+CC1([C@@H](N2[C@H](S1)[C@@H](C2=O)NC(=O)[C@@H](C3=CC=CC=C3)N)C(=O)O)C,ampcillin,45,11,Low,349,-3.39,4,0.12,0.87,3.54,Gram-negative
+C[C@@]1([C@H]2C[C@H]3[C@@H](C(=O)C(=C([C@]3(C(=O)C2=C(C4=C1C=CC=C4O)O)O)O)C(=O)N)N(C)C)O,tetracycline,1759,160,High,444,-2.84,2,0.2,1.11,4.11,Gram-negative
+C1CC1N2C=C(C(=O)C3=CC(=C(C=C32)N4CCNCC4)F)C(=O)O,ciprofloxacin,2263,286,High,331,-1.39,3,0.07,0.69,3.28,Gram-negative
+C1=CC(=CC=C1[C@H]([C@@H](CO)NC(=O)C(Cl)Cl)O)[N+](=O)[O-],chloramphenicol,709,45,High,323,0.66,6,0.15,0.87,3.52,Gram-negative

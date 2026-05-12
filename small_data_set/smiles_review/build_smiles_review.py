@@ -13,11 +13,13 @@ if str(PROJECT_ROOT) not in sys.path:
 from small_data_set.spliting import (
     DATA_DIR,
     TABLES,
+    _find_col,
     _guess_smiles_col,
     _keep_only_shared_core,
     _load_one_table,
     _norm_cols,
 )
+from small_data_set.smiles_corrections import apply_smiles_fixes
 
 REVIEW_DIR = Path("small_data_set/smiles_review")
 REVIEW_DIR.mkdir(parents=True, exist_ok=True)
@@ -92,6 +94,21 @@ def write_fixed_table_copies() -> pd.DataFrame:
                     still_invalid += 1
 
         df[smiles_col] = fixed
+
+        compound_id_col = _find_col(
+            df,
+            ["Compound", "Compound_ID", "ID", "Name", "compound", "compound_id"],
+        )
+        if compound_id_col is not None:
+            df, fix_counts = apply_smiles_fixes(
+                df,
+                smiles_col=smiles_col,
+                compound_id_col=compound_id_col,
+                source_table_value=f"Table{table_num}",
+            )
+        else:
+            fix_counts = {"rows_replaced": 0, "rows_dropped": 0}
+
         out = REVIEW_DIR / f"table{table_num}_fixed_review.csv"
         df.to_csv(out, index=False)
 
@@ -102,6 +119,8 @@ def write_fixed_table_copies() -> pd.DataFrame:
                 "rows_changed": changed,
                 "invalid_became_valid": newly_valid,
                 "still_invalid_after_fix": still_invalid,
+                "prof_smiles_replaced": fix_counts["rows_replaced"],
+                "prof_rows_dropped": fix_counts["rows_dropped"],
                 "output": str(out),
             }
         )

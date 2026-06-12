@@ -35,7 +35,8 @@ def print_metrics(split_name, y_true, y_pred):
 
 
 def train_and_evaluate():
-    X_train, X_test, y_train, y_test = get_classification_split()
+    # Uses the shared split loader, which fits scaling on train only and applies it to test.
+    X_train, X_test, y_train, y_test = get_classification_split(scale=True)
 
     print("=== Dataset: big (XGBoost Mode) ===")
     print("X_train shape:", X_train.shape)

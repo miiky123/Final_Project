@@ -2,7 +2,7 @@ import os
 import sys
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, matthews_corrcoef
 
 CURRENT_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
@@ -34,6 +34,7 @@ def print_metrics(split_name, y_true, y_pred):
     """Print evaluation metrics for a single split."""
     print(f"\n=== {split_name} Metrics ===")
     print("Accuracy:", accuracy_score(y_true, y_pred))
+    print("MCC:", round(matthews_corrcoef(y_true, y_pred), 4))
     print("\nConfusion Matrix:")
     print(confusion_matrix(y_true, y_pred))
     print("\nClassification Report:")

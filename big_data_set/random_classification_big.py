@@ -2,7 +2,7 @@ import os
 import sys
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, matthews_corrcoef
 
 CURRENT_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
@@ -14,6 +14,7 @@ from big_data_set.spliting import get_classification_split
 def print_metrics(split_name, y_true, y_pred):
     print(f"\n=== {split_name} Metrics ===")
     print("Accuracy:", accuracy_score(y_true, y_pred))
+    print("MCC:", round(matthews_corrcoef(y_true, y_pred), 4))
     print("\nConfusion Matrix:")
     print(confusion_matrix(y_true, y_pred))
     print("\nClassification Report:")

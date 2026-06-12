@@ -3,6 +3,7 @@
 import argparse
 import json
 import zipfile
+import os
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 
@@ -15,6 +16,7 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 
 SEED = 42
 N_INACTIVE = 400
+PROJECT_ROOT = Path(os.path.abspath(os.path.dirname(__file__)))
 
 
 def canonicalize_smiles(smiles: str) -> Optional[str]:
@@ -270,31 +272,83 @@ def leakage_checks(train: pd.DataFrame, test: pd.DataFrame) -> Dict:
     }
 
 
+def prepare_train_test_split(
+    evaders_path: Path,
+    substrates_path: Path,
+    coadd_zip: Path,
+    n_inactive: int,
+    test_frac: float,
+    seed: int,
+    mode: str,
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict]:
+    active_df = load_curated(evaders_path, substrates_path)
+
+    inactive_sample = load_inactive_sample_from_coadd_zip(
+        zip_path=coadd_zip,
+        n_inactive=n_inactive,
+        seed=seed,
+    )
+
+    df = pd.concat([active_df, inactive_sample], ignore_index=True)
+    df, cleaning_meta = basic_clean(df)
+
+    if mode == "random_stratified":
+        train, test = random_stratified_split(
+            df=df,
+            test_frac=test_frac,
+            seed=seed,
+        )
+    elif mode == "scaffold":
+        train, test = scaffold_split(
+            df=df,
+            test_frac=test_frac,
+            seed=seed,
+        )
+    else:
+        raise ValueError("mode must be 'random_stratified' or 'scaffold'")
+
+    summary = {
+        "cleaning": cleaning_meta,
+        "split": {
+            "mode": mode,
+            "seed": int(seed),
+            "test_frac": float(test_frac),
+            "train_size": int(len(train)),
+            "test_size": int(len(test)),
+            "all_class_counts": class_counts(df),
+            "train_class_counts": class_counts(train),
+            "test_class_counts": class_counts(test),
+        },
+        "leakage": leakage_checks(train, test),
+    }
+    return train, test, summary
+
+
 def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
         "--evaders",
         type=Path,
-        default=Path("big_data_set/data_curated/efflux_evaders_om_corrected.pkl"),
+        default=PROJECT_ROOT / "big_data_set" / "data_curated" / "efflux_evaders_om_corrected.pkl",
     )
 
     parser.add_argument(
         "--substrates",
         type=Path,
-        default=Path("big_data_set/data_curated/efflux_substrates_om_corrected.pkl"),
+        default=PROJECT_ROOT / "big_data_set" / "data_curated" / "efflux_substrates_om_corrected.pkl",
     )
 
     parser.add_argument(
         "--coadd-zip",
         type=Path,
-        default=Path("big_data_set/data_curated/CO-ADD_r03.02-2020_CSV.zip"),
+        default=PROJECT_ROOT / "big_data_set" / "CO-ADD_r03.02-2020_CSV.zip",
     )
 
     parser.add_argument(
         "--outdir",
         type=Path,
-        default=Path("big_data_set/splits/random_70_30_3way"),
+        default=PROJECT_ROOT / "big_data_set" / "splits" / "random_70_30_3way",
     )
 
     parser.add_argument("--n-inactive", type=int, default=N_INACTIVE)
@@ -309,30 +363,15 @@ def main():
 
     args = parser.parse_args()
 
-    active_df = load_curated(args.evaders, args.substrates)
-
-    inactive_sample = load_inactive_sample_from_coadd_zip(
-        zip_path=args.coadd_zip,
+    train, test, split_summary = prepare_train_test_split(
+        evaders_path=args.evaders,
+        substrates_path=args.substrates,
+        coadd_zip=args.coadd_zip,
         n_inactive=args.n_inactive,
+        test_frac=args.test_frac,
         seed=args.seed,
+        mode=args.mode,
     )
-
-    df = pd.concat([active_df, inactive_sample], ignore_index=True)
-
-    df, cleaning_meta = basic_clean(df)
-
-    if args.mode == "random_stratified":
-        train, test = random_stratified_split(
-            df=df,
-            test_frac=args.test_frac,
-            seed=args.seed,
-        )
-    else:
-        train, test = scaffold_split(
-            df=df,
-            test_frac=args.test_frac,
-            seed=args.seed,
-        )
 
     args.outdir.mkdir(parents=True, exist_ok=True)
 
@@ -346,25 +385,16 @@ def main():
             "coadd_zip": str(args.coadd_zip),
             "n_inactive_sampled": int(args.n_inactive),
         },
-        "cleaning": cleaning_meta,
-        "split": {
-            "mode": args.mode,
-            "seed": int(args.seed),
-            "test_frac": float(args.test_frac),
-            "train_size": int(len(train)),
-            "test_size": int(len(test)),
-            "all_class_counts": class_counts(df),
-            "train_class_counts": class_counts(train),
-            "test_class_counts": class_counts(test),
-        },
-        "leakage": leakage_checks(train, test),
+        "cleaning": split_summary["cleaning"],
+        "split": split_summary["split"],
+        "leakage": split_summary["leakage"],
     }
 
     with open(args.outdir / "split_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
     print("\n=== 3-Way Dataset ===")
-    print(df["Class"].value_counts())
+    print(pd.Series(summary["split"]["all_class_counts"]))
 
     print("\n=== Train ===")
     print(train["Class"].value_counts())

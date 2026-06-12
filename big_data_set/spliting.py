@@ -1,51 +1,202 @@
 import os
+import json
+import argparse
+import sys
 
 import numpy as np
 import pandas as pd
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
+from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.Chem.MolStandardize import rdMolStandardize
+from sklearn.preprocessing import MaxAbsScaler, StandardScaler
+
+CURRENT_DIR = os.path.dirname(__file__)
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from big_data_set.prepare_bigdata import (
+    class_counts,
+    prepare_bigdata_dataframe,
+)
 
 SEED = 42
 TRAIN_FRAC = 0.70
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+TEST_FRAC = 1.0 - TRAIN_FRAC
+DEFAULT_SPLIT_MODE = "random_stratified"
+BASE_DIR = PROJECT_ROOT
 DATA_DIR = os.path.join(BASE_DIR, "big_data_set", "data_curated")
 DEFAULT_SPLIT_DIR = os.path.join(BASE_DIR, "big_data_set", "splits", "split")
 REIONIZER = rdMolStandardize.Reionizer()
 MORGAN_GENERATOR = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
 
 
-def shuffle_and_split(df, train_frac=0.7, seed=42):
-    """Shuffle a dataframe and return train and test parts."""
-    df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
-    n_train = int(np.floor(train_frac * len(df)))
-    train = df.iloc[:n_train].reset_index(drop=True)
-    test = df.iloc[n_train:].reset_index(drop=True)
-    return train, test
+def murcko_scaffold(smiles: str):
+    """Build a Murcko scaffold string for scaffold-based splitting."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+
+    scaffold = MurckoScaffold.GetScaffoldForMol(mol)
+    if scaffold is None:
+        return None
+
+    return Chem.MolToSmiles(scaffold, canonical=True, isomericSmiles=True)
 
 
-def build_split_dataframes():
-    """Load the curated classes and create the original 70/30 split."""
-    evaders = pd.read_pickle(os.path.join(DATA_DIR, "efflux_evaders_om_corrected.pkl"))
-    substrates = pd.read_pickle(os.path.join(DATA_DIR, "efflux_substrates_om_corrected.pkl"))
+def random_stratified_split(df: pd.DataFrame, test_frac=TEST_FRAC, seed=SEED):
+    """Split each class independently so train/test keep similar class ratios."""
+    rng = np.random.RandomState(seed)
+    train_parts = []
+    test_parts = []
 
-    evaders = evaders.dropna(subset=["SMILES"]).drop_duplicates(subset=["SMILES"]).reset_index(drop=True)
-    substrates = substrates.dropna(subset=["SMILES"]).drop_duplicates(subset=["SMILES"]).reset_index(drop=True)
+    for _, group in df.groupby("Class"):
+        group = group.reset_index(drop=True)
+        indices = np.arange(len(group))
+        rng.shuffle(indices)
+        n_test = int(np.floor(test_frac * len(group)))
 
-    train_evaders, test_evaders = shuffle_and_split(evaders, TRAIN_FRAC, SEED)
-    train_substrates, test_substrates = shuffle_and_split(substrates, TRAIN_FRAC, SEED)
+        test_idx = indices[:n_test]
+        train_idx = indices[n_test:]
 
-    train_df = pd.concat([train_evaders, train_substrates], ignore_index=True)
-    train_df = train_df.sample(frac=1, random_state=SEED).reset_index(drop=True)
+        test_parts.append(group.iloc[test_idx])
+        train_parts.append(group.iloc[train_idx])
 
-    test_df = pd.concat([test_evaders, test_substrates], ignore_index=True)
-    test_df = test_df.sample(frac=1, random_state=SEED).reset_index(drop=True)
+    train_df = pd.concat(train_parts, ignore_index=True)
+    train_df = train_df.sample(frac=1, random_state=seed).reset_index(drop=True)
 
+    test_df = pd.concat(test_parts, ignore_index=True)
+    test_df = test_df.sample(frac=1, random_state=seed).reset_index(drop=True)
     return train_df, test_df
 
 
+def scaffold_split(df: pd.DataFrame, test_frac=TEST_FRAC, seed=SEED):
+    """Split by Murcko scaffold so test scaffolds do not appear in train."""
+    df = df.copy()
+    df["scaffold"] = df["SMILES"].apply(murcko_scaffold)
+    df = df.dropna(subset=["scaffold"]).reset_index(drop=True)
+
+    scaffolds = list(df["scaffold"].unique())
+    rng = np.random.RandomState(seed)
+    rng.shuffle(scaffolds)
+    scaffolds = sorted(
+        scaffolds,
+        key=lambda scaffold: len(df[df["scaffold"] == scaffold]),
+        reverse=True,
+    )
+
+    target_test = int(np.floor(test_frac * len(df)))
+    test_scaffolds = set()
+    test_size = 0
+
+    for scaffold in scaffolds:
+        group_size = int((df["scaffold"] == scaffold).sum())
+        if test_size + group_size <= target_test or len(test_scaffolds) == 0:
+            test_scaffolds.add(scaffold)
+            test_size += group_size
+        if test_size >= target_test:
+            break
+
+    test_df = df[df["scaffold"].isin(test_scaffolds)].copy()
+    train_df = df[~df["scaffold"].isin(test_scaffolds)].copy()
+
+    train_df = train_df.drop(columns=["scaffold"])
+    test_df = test_df.drop(columns=["scaffold"])
+
+    train_df = train_df.sample(frac=1, random_state=seed).reset_index(drop=True)
+    test_df = test_df.sample(frac=1, random_state=seed).reset_index(drop=True)
+    return train_df, test_df
+
+
+def split_leakage_checks(train_df: pd.DataFrame, test_df: pd.DataFrame):
+    """Check for identical canonical SMILES appearing in both partitions."""
+    train_smiles = set(train_df["SMILES"])
+    test_smiles = set(test_df["SMILES"])
+    overlap = train_smiles.intersection(test_smiles)
+    return {
+        "smiles_overlap_count": int(len(overlap)),
+        "smiles_overlap_examples": list(sorted(overlap)[:10]),
+    }
+
+
+def build_split_dataframes(
+    test_frac=TEST_FRAC,
+    seed=SEED,
+    mode=DEFAULT_SPLIT_MODE,
+    evaders_path=None,
+    substrates_path=None,
+    nonpermeating=None,
+    nonpermeating_smiles_col="SMILES",
+):
+    """Prepare the dataset and create a train/test split."""
+    if evaders_path is None:
+        evaders_path = os.path.join(DATA_DIR, "efflux_evaders_om_corrected.pkl")
+    if substrates_path is None:
+        substrates_path = os.path.join(DATA_DIR, "efflux_substrates_om_corrected.pkl")
+
+    df, _ = prepare_bigdata_dataframe(
+        evaders_path=evaders_path,
+        substrates_path=substrates_path,
+        nonpermeating=nonpermeating,
+        nonpermeating_smiles_col=nonpermeating_smiles_col,
+    )
+
+    if mode == "random_stratified":
+        return random_stratified_split(df, test_frac=test_frac, seed=seed)
+    if mode == "scaffold":
+        return scaffold_split(df, test_frac=test_frac, seed=seed)
+
+    raise ValueError("mode must be 'random_stratified' or 'scaffold'.")
+
+
+def save_split_dataframes(
+    split_dir=DEFAULT_SPLIT_DIR,
+    test_frac=TEST_FRAC,
+    seed=SEED,
+    mode=DEFAULT_SPLIT_MODE,
+    evaders_path=None,
+    substrates_path=None,
+    nonpermeating=None,
+    nonpermeating_smiles_col="SMILES",
+):
+    """Create a split, write it to disk, and save a summary JSON next to it."""
+    train_df, test_df = build_split_dataframes(
+        test_frac=test_frac,
+        seed=seed,
+        mode=mode,
+        evaders_path=evaders_path,
+        substrates_path=substrates_path,
+        nonpermeating=nonpermeating,
+        nonpermeating_smiles_col=nonpermeating_smiles_col,
+    )
+
+    os.makedirs(split_dir, exist_ok=True)
+    train_df.to_pickle(os.path.join(split_dir, "train.pkl"))
+    test_df.to_pickle(os.path.join(split_dir, "test.pkl"))
+
+    summary = {
+        "split": {
+            "mode": mode,
+            "seed": int(seed),
+            "test_frac": float(test_frac),
+            "train_size": int(len(train_df)),
+            "test_size": int(len(test_df)),
+            "train_class_counts": class_counts(train_df),
+            "test_class_counts": class_counts(test_df),
+        },
+        "leakage": split_leakage_checks(train_df, test_df),
+    }
+
+    summary_path = os.path.join(split_dir, "split_summary.json")
+    with open(summary_path, "w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+
+    return train_df, test_df, summary
+
+
 def load_saved_split(split_dir=DEFAULT_SPLIT_DIR):
-    """Load a saved train/test split from pickle files, or rebuild if missing."""
+    """Load a saved train/test split from pickle files, or build the default split if missing."""
     train_path = os.path.join(split_dir, "train.pkl")
     test_path = os.path.join(split_dir, "test.pkl")
 
@@ -135,7 +286,30 @@ def _normalize_class_labels(series: pd.Series) -> pd.Series:
     })
 
 
-def get_classification_split(split_dir=DEFAULT_SPLIT_DIR, feature_set="auto"):
+def _scale_features(X_train: pd.DataFrame, X_test: pd.DataFrame, feature_set: str):
+    """Fit a scaler on the training split only and apply it to both splits."""
+    if feature_set == "numeric":
+        scaler = StandardScaler()
+    elif feature_set == "fps":
+        # Fingerprints are already bounded binary features; MaxAbs preserves that shape.
+        scaler = MaxAbsScaler()
+    else:
+        raise ValueError("feature_set must be 'fps' or 'numeric' for scaling.")
+
+    X_train_scaled = pd.DataFrame(
+        scaler.fit_transform(X_train),
+        columns=X_train.columns,
+        index=X_train.index,
+    )
+    X_test_scaled = pd.DataFrame(
+        scaler.transform(X_test),
+        columns=X_test.columns,
+        index=X_test.index,
+    )
+    return X_train_scaled, X_test_scaled
+
+
+def get_classification_split(split_dir=DEFAULT_SPLIT_DIR, feature_set="auto", scale=True):
     """Return classification-ready train/test data from the big dataset."""
     train_df, test_df = load_saved_split(split_dir)
 
@@ -156,6 +330,9 @@ def get_classification_split(split_dir=DEFAULT_SPLIT_DIR, feature_set="auto"):
     else:
         raise ValueError("feature_set must be 'auto', 'fps', or 'numeric'.")
 
+    if scale:
+        X_train, X_test = _scale_features(X_train, X_test, feature_set)
+
     y_train = _normalize_class_labels(train_df[target_col].copy())
     y_test = _normalize_class_labels(test_df[target_col].copy())
 
@@ -163,38 +340,41 @@ def get_classification_split(split_dir=DEFAULT_SPLIT_DIR, feature_set="auto"):
 
 
 def main():
-    train_df, test_df = build_split_dataframes()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--outdir", default=DEFAULT_SPLIT_DIR)
+    parser.add_argument("--test-frac", type=float, default=TEST_FRAC)
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--mode", choices=["random_stratified", "scaffold"], default=DEFAULT_SPLIT_MODE)
+    parser.add_argument(
+        "--evaders",
+        default=os.path.join(DATA_DIR, "efflux_evaders_om_corrected.pkl"),
+    )
+    parser.add_argument(
+        "--substrates",
+        default=os.path.join(DATA_DIR, "efflux_substrates_om_corrected.pkl"),
+    )
+    parser.add_argument("--nonpermeating", default=None)
+    parser.add_argument("--nonpermeating-smiles-col", default="SMILES")
+    args = parser.parse_args()
+
+    train_df, test_df, summary = save_split_dataframes(
+        split_dir=args.outdir,
+        test_frac=args.test_frac,
+        seed=args.seed,
+        mode=args.mode,
+        evaders_path=args.evaders,
+        substrates_path=args.substrates,
+        nonpermeating=args.nonpermeating,
+        nonpermeating_smiles_col=args.nonpermeating_smiles_col,
+    )
     train_labels = _normalize_class_labels(train_df["Class"])
     test_labels = _normalize_class_labels(test_df["Class"])
 
-    print("=== Sizes ===")
-    print("Train:", len(train_df))
-    print("Test :", len(test_df))
+    print("=== Saved Split ===")
+    print(json.dumps(summary["split"], indent=2))
     print()
-    print("=== Class distribution (counts) ===")
-    print("Train:\n", train_labels.value_counts())
-    print("\nTest:\n", test_labels.value_counts())
-
-    import matplotlib.pyplot as plt
-
-    counts = pd.DataFrame({
-        "Train": train_labels.value_counts(),
-        "Test": test_labels.value_counts(),
-    }).fillna(0).astype(int)
-
-    classes = counts.index.tolist()
-    x = np.arange(len(classes))
-    w = 0.35
-
-    plt.figure(figsize=(7, 4))
-    plt.bar(x - w / 2, counts["Train"].values, width=w, label="Train")
-    plt.bar(x + w / 2, counts["Test"].values, width=w, label="Test")
-    plt.xticks(x, classes, rotation=20)
-    plt.ylabel("Count")
-    plt.title("Per-class shuffle + 70/30 split")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    print("Train labels:\n", train_labels.value_counts())
+    print("\nTest labels:\n", test_labels.value_counts())
 
 
 if __name__ == "__main__":

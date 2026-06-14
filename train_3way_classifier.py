@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import warnings
 
 import numpy as np
 from rdkit import Chem, DataStructs
@@ -15,8 +16,7 @@ from sklearn.metrics import (
     f1_score,
     matthews_corrcoef,
 )
-from sklearn.svm import LinearSVC
-from xgboost import XGBClassifier
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
 
 from prepare_3way_splits import (
     N_INACTIVE,
@@ -61,6 +61,10 @@ def featurize(train_df, test_df):
 
 def evaluate_model(name, model, X_train, y_train, X_test, y_test):
     model.fit(X_train, y_train)
+    return evaluate_fitted_model(name, model, X_test, y_test)
+
+
+def evaluate_fitted_model(name, model, X_test, y_test):
     y_pred = model.predict(X_test)
 
     metrics = {
@@ -78,6 +82,37 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test):
     print(classification_report(y_test, y_pred, target_names=target_names))
     print(confusion_matrix(y_test, y_pred))
     return metrics
+
+
+def optimize_model(name, estimator, param_distributions, X_train, y_train, seed, n_iter, cv_folds):
+    """Tune one model on the training split only."""
+    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+    search = RandomizedSearchCV(
+        estimator=estimator,
+        param_distributions=param_distributions,
+        n_iter=n_iter,
+        scoring="balanced_accuracy",
+        cv=cv,
+        n_jobs=-1,
+        random_state=seed,
+        refit=True,
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*penalty.*deprecated.*",
+            category=FutureWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="Inconsistent values: penalty=.*",
+            category=UserWarning,
+        )
+        search.fit(X_train, y_train)
+
+    print(f"\n{name} CV best balanced_accuracy: {search.best_score_:.4f}")
+    print(f"{name} best params: {search.best_params_}")
+    return search.best_estimator_
 
 
 def print_run_header(run_idx, train_df, test_df):
@@ -118,6 +153,8 @@ def main():
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--n-runs", type=int, default=5)
     parser.add_argument("--mode", choices=["random_stratified", "scaffold"], default="random_stratified")
+    parser.add_argument("--search-iters", type=int, default=12)
+    parser.add_argument("--cv-folds", type=int, default=5)
     args = parser.parse_args()
 
     evaders_path = os.path.abspath(args.evaders)
@@ -127,8 +164,6 @@ def main():
     results_by_model = {
         "RANDOM FOREST": [],
         "LOGISTIC REGRESSION": [],
-        "LINEAR SVM": [],
-        "XGBOOST": [],
     }
 
     for run_idx in range(1, args.n_runs + 1):
@@ -146,50 +181,52 @@ def main():
         print_run_header(run_idx, train_df, test_df)
         X_train, X_test, y_train, y_test = featurize(train_df, test_df)
 
-        rf = RandomForestClassifier(
-            n_estimators=1000,
-            max_depth=20,
-            min_samples_leaf=2,
-            class_weight="balanced",
-            random_state=run_seed,
-            n_jobs=-1,
+        rf = optimize_model(
+            "RANDOM FOREST",
+            RandomForestClassifier(random_state=run_seed, n_jobs=1),
+            {
+                "n_estimators": [200, 400, 800, 1000],
+                "max_depth": [None, 10, 20, 30],
+                "min_samples_split": [2, 5, 10],
+                "min_samples_leaf": [1, 2, 4],
+                "max_features": ["sqrt", "log2", 0.25, 0.5],
+                "class_weight": [None, "balanced", "balanced_subsample"],
+            },
+            X_train,
+            y_train,
+            run_seed,
+            args.search_iters,
+            args.cv_folds,
         )
         results_by_model["RANDOM FOREST"].append(
-            evaluate_model("RANDOM FOREST", rf, X_train, y_train, X_test, y_test)
+            evaluate_fitted_model("RANDOM FOREST", rf, X_test, y_test)
         )
 
-        lr = LogisticRegression(
-            max_iter=5000,
-            class_weight="balanced",
-            random_state=run_seed,
-            solver="saga",
+        lr = optimize_model(
+            "LOGISTIC REGRESSION",
+            LogisticRegression(max_iter=5000, random_state=run_seed),
+            [
+                {
+                    "solver": ["lbfgs"],
+                    "penalty": ["l2"],
+                    "C": np.logspace(-3, 2, 30),
+                    "class_weight": [None, "balanced"],
+                },
+                {
+                    "solver": ["saga"],
+                    "penalty": ["l1", "l2"],
+                    "C": np.logspace(-3, 2, 30),
+                    "class_weight": [None, "balanced"],
+                },
+            ],
+            X_train,
+            y_train,
+            run_seed,
+            args.search_iters,
+            args.cv_folds,
         )
         results_by_model["LOGISTIC REGRESSION"].append(
-            evaluate_model("LOGISTIC REGRESSION", lr, X_train, y_train, X_test, y_test)
-        )
-
-        svm = LinearSVC(
-            class_weight="balanced",
-            random_state=run_seed,
-            max_iter=10000,
-        )
-        results_by_model["LINEAR SVM"].append(
-            evaluate_model("LINEAR SVM", svm, X_train, y_train, X_test, y_test)
-        )
-
-        xgb = XGBClassifier(
-            objective="multi:softprob",
-            num_class=3,
-            n_estimators=500,
-            max_depth=6,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            random_state=run_seed,
-            eval_metric="mlogloss",
-        )
-        results_by_model["XGBOOST"].append(
-            evaluate_model("XGBOOST", xgb, X_train, y_train, X_test, y_test)
+            evaluate_fitted_model("LOGISTIC REGRESSION", lr, X_test, y_test)
         )
 
     summarize_results(results_by_model, args.n_runs)

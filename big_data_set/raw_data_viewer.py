@@ -1,49 +1,151 @@
-import pandas as pd
+from pathlib import Path
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
-def main():
-    evaders = pd.read_pickle("big_data_set/data_curated/efflux_evaders_om_corrected.pkl")
-    substrates = pd.read_pickle("big_data_set/data_curated/efflux_substrates_om_corrected.pkl")
+# התיקייה שבה נמצא raw_data_viewer.py
+BASE_DIR = Path(__file__).resolve().parent
 
-    print("=== Evaders ===")
-    print("Shape:", evaders.shape)
-    print(evaders.head())
-    print(evaders.columns)
-    print()
+EVADERS_PATH = (
+    BASE_DIR
+    / "data_curated"
+    / "efflux_evaders_om_corrected.pkl"
+)
 
-    print("=== Non Evaders (removed from cell) ===")
-    print("Shape:", substrates.shape)
-    print(substrates.head())
-    print(substrates.columns)
-    print()
+SUBSTRATES_PATH = (
+    BASE_DIR
+    / "data_curated"
+    / "efflux_substrates_om_corrected.pkl"
+)
 
-    evaders_size = len(evaders)
-    substrates_size = len(substrates)
+OUTPUT_PATH = (
+    BASE_DIR
+    / "binary_classification_distribution.png"
+)
 
-    labels = ["Evaders", "Non Evaders\n(removed from cell)"]
-    counts = [evaders_size, substrates_size]
 
-    total = sum(counts)
-    perc = [c / total * 100 for c in counts]
-
-    plt.figure(figsize=(6, 4))
-    bars = plt.bar(labels, counts)
-    plt.ylabel("Count")
-    plt.title("Dataset distribution")
-
-    for b, p in zip(bars, perc):
-        h = b.get_height()
-        plt.text(
-            b.get_x() + b.get_width() / 2,
-            h,
-            f"{int(h)} ({p:.1f}%)",
-            ha="center",
-            va="bottom",
+def load_pickle(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"הקובץ לא נמצא:\n{path}"
         )
 
-    plt.tight_layout()
-    plt.show()
+    return pd.read_pickle(path)
+
+
+def main() -> None:
+    evaders = load_pickle(EVADERS_PATH)
+    substrates = load_pickle(SUBSTRATES_PATH)
+
+    counts = [
+        len(evaders),
+        len(substrates),
+    ]
+
+    labels = [
+        "Efflux Evaders",
+        "Efflux Substrates",
+    ]
+
+    total = sum(counts)
+    percentages = [
+        count / total * 100
+        for count in counts
+    ]
+
+    print("=== מאגר הסיווג הדו־מחלקתי ===")
+    print(f"Evaders: {counts[0]}")
+    print(f"Substrates: {counts[1]}")
+    print(f"Total: {total}")
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+
+    bars = ax.bar(
+        labels,
+        counts,
+        width=0.58,
+        edgecolor="black",
+        linewidth=0.8,
+    )
+
+    for bar, count, percentage in zip(
+        bars,
+        counts,
+        percentages,
+    ):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f"{count}\n({percentage:.1f}%)",
+            ha="center",
+            va="bottom",
+            fontsize=14,
+            fontweight="bold",
+        )
+
+    ax.set_title(
+        "Binary Classification Dataset",
+        fontsize=19,
+        fontweight="bold",
+        pad=18,
+    )
+
+    ax.set_ylabel(
+        "Number of Molecules",
+        fontsize=15,
+    )
+
+    ax.tick_params(
+        axis="x",
+        labelsize=14,
+    )
+
+    ax.tick_params(
+        axis="y",
+        labelsize=12,
+    )
+
+    ax.set_ylim(
+        0,
+        max(counts) * 1.22,
+    )
+
+    ax.yaxis.grid(
+        True,
+        linestyle="--",
+        alpha=0.3,
+    )
+
+    ax.set_axisbelow(True)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    ax.text(
+        0.98,
+        0.96,
+        f"Total: {total} molecules",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=12,
+    )
+
+    fig.tight_layout()
+
+    fig.savefig(
+        OUTPUT_PATH,
+        dpi=300,
+        bbox_inches="tight",
+        facecolor="white",
+    )
+
+    plt.close(fig)
+
+    print(f"\nהגרף נשמר כאן:\n{OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

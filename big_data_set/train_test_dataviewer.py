@@ -1,6 +1,9 @@
 import os
 import sys
 
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -11,11 +14,15 @@ PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from big_data_set.spliting import DEFAULT_SPLIT_DIR, build_split_dataframes, load_saved_split
+from big_data_set.spliting import (
+    DEFAULT_SPLIT_DIR,
+    build_split_dataframes,
+    load_saved_split,
+)
 
 
-def _load_split_data(split_dir=DEFAULT_SPLIT_DIR):
-    """Load an existing split, or rebuild it if the pickle files are not there yet."""
+def load_split(split_dir=DEFAULT_SPLIT_DIR):
+
     train_path = os.path.join(split_dir, "train.pkl")
     test_path = os.path.join(split_dir, "test.pkl")
 
@@ -25,74 +32,152 @@ def _load_split_data(split_dir=DEFAULT_SPLIT_DIR):
     return build_split_dataframes()
 
 
-def _resolve_target_column(train_df: pd.DataFrame, test_df: pd.DataFrame) -> str:
-    """Pick the class column used by the split files."""
-    for column in ("Class", "Accum_Class"):
-        if column in train_df.columns and column in test_df.columns:
-            return column
-    raise ValueError("Could not find a class column in the split data.")
+def get_target_column(train_df, test_df):
+
+    for col in ("Class", "Accum_Class"):
+        if col in train_df.columns and col in test_df.columns:
+            return col
+
+    raise ValueError("Target column not found.")
 
 
-def _normalize_class_labels(series: pd.Series) -> pd.Series:
-    """Rename substrate-like labels for clearer plot labels."""
-    return series.replace(
-        {
-            "Substrate": "Non Evaders (removed from cell)",
-            "Substrates": "Non Evaders (removed from cell)",
-            "Efflux Substrate": "Non Evaders (removed from cell)",
-        }
+def normalize(series: pd.Series) -> pd.Series:
+    """Normalize all class-name variants into two consistent labels."""
+    return (
+        series.astype(str)
+        .str.strip()
+        .replace(
+            {
+                "Evader": "Efflux Evader",
+                "Evaders": "Efflux Evader",
+                "Efflux Evaders": "Efflux Evader",
+
+                "Substrate": "Efflux Substrate",
+                "Substrates": "Efflux Substrate",
+                "Efflux Substrates": "Efflux Substrate",
+                "Non Evader": "Efflux Substrate",
+                "Non Evaders": "Efflux Substrate",
+                "Non Evaders (removed from cell)": "Efflux Substrate",
+            }
+        )
     )
 
 
-def plot_split_distribution(split_dir=DEFAULT_SPLIT_DIR):
-    """Plot train/test class distribution for evaders and non-evaders."""
-    train_df, test_df = _load_split_data(split_dir)
-    target_col = _resolve_target_column(train_df, test_df)
-    train_labels = _normalize_class_labels(train_df[target_col])
-    test_labels = _normalize_class_labels(test_df[target_col])
+def main():
+
+    train_df, test_df = load_split()
+
+    target = get_target_column(train_df, test_df)
+
+    train = normalize(train_df[target])
+    test = normalize(test_df[target])
 
     counts = pd.DataFrame(
         {
-            "Train": train_labels.value_counts(),
-            "Test": test_labels.value_counts(),
+            "Train": train.value_counts(),
+            "Test": test.value_counts(),
         }
     ).fillna(0).astype(int)
 
-    preferred_order = ["Evader", "Non Evader", "Evaders", "Non Evaders", "Non Evaders (removed from cell)"]
-    ordered_classes = [label for label in preferred_order if label in counts.index]
-    ordered_classes.extend(label for label in counts.index if label not in ordered_classes)
-    counts = counts.loc[ordered_classes]
+    class_order = [
+        "Efflux Evader",
+        "Efflux Substrate",
+    ]
 
-    x = np.arange(len(counts.index))
-    width = 0.35
+    counts = counts.reindex(class_order, fill_value=0)
 
-    plt.figure(figsize=(8, 5))
-    train_bars = plt.bar(x - width / 2, counts["Train"], width=width, label="Train", color="#4C72B0")
-    test_bars = plt.bar(x + width / 2, counts["Test"], width=width, label="Test", color="#DD8452")
+    train_total = counts["Train"].sum()
+    test_total = counts["Test"].sum()
 
-    plt.xticks(x, counts.index, rotation=15)
-    plt.xlabel("Class")
-    plt.ylabel("Count")
-    plt.title("Train/Test Distribution of Evaders and Non Evaders (removed from cell)")
-    plt.legend()
+    x = np.arange(len(counts))
+    width = 0.34
 
-    for bars in (train_bars, test_bars):
-        for bar in bars:
-            height = int(bar.get_height())
-            plt.text(
-                bar.get_x() + bar.get_width() / 2,
-                height,
-                str(height),
-                ha="center",
-                va="bottom",
-            )
+    fig, ax = plt.subplots(figsize=(8,5))
 
-    plt.tight_layout()
-    plt.show()
+    train_bars = ax.bar(
+        x - width/2,
+        counts["Train"],
+        width,
+        label="Train",
+        color="#4C72B0",
+    )
 
+    test_bars = ax.bar(
+        x + width/2,
+        counts["Test"],
+        width,
+        label="Test",
+        color="#DD8452",
+    )
 
-def main():
-    plot_split_distribution()
+    for bar in train_bars:
+
+        h = int(bar.get_height())
+        p = h/train_total*100
+
+        ax.text(
+            bar.get_x()+bar.get_width()/2,
+            h,
+            f"{h}\n({p:.1f}%)",
+            ha="center",
+            va="bottom",
+            fontsize=11,
+        )
+
+    for bar in test_bars:
+
+        h = int(bar.get_height())
+        p = h/test_total*100
+
+        ax.text(
+            bar.get_x()+bar.get_width()/2,
+            h,
+            f"{h}\n({p:.1f}%)",
+            ha="center",
+            va="bottom",
+            fontsize=11,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        counts.index,
+        fontsize=12,
+    )
+
+    ax.set_ylabel(
+        "Number of Molecules",
+        fontsize=13,
+    )
+
+    ax.set_title(
+        "Stratified Train/Test Split",
+        fontsize=18,
+        fontweight="bold",
+        pad=20,
+    )
+
+    ax.grid(
+        axis="y",
+        linestyle="--",
+        alpha=0.3,
+    )
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    ax.legend(frameon=False)
+
+    fig.tight_layout()
+
+    fig.savefig(
+        "train_test_split.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close(fig)
+
+    print(counts)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ regression/
   data/smiles_review/    Reviewed and corrected table copies
   data/processed/        Model-ready 1D/2D and 3D descriptor tables
   preprocessing/        SMILES review, descriptor generation, and splitting
-  models/                Regression comparisons and final XGBoost workflows
+  models/                Regression comparisons and XGBoost workflows
   visualization/         Regression distribution and prediction plots
 
 results/figures/         Generated classification and regression figures
@@ -194,35 +194,65 @@ target values more evenly; the model still predicts a continuous number.
 The following commands can be run directly without rebuilding the descriptors:
 
 ```bash
-# Baseline algorithm comparison
+# 1. Plain algorithm comparison on the same 1D/2D data and split
 python -m regression.models.compare_regression_models
 
-# Final all-descriptor XGBoost with leakage-safe feature selection
-python -m regression.models.xgboost_regression_all_descriptors_feature_selection
+# 2. Best observed model by itself
+python -m regression.models.xgboost_regression_plain_1d2d
 
-# Compare three 1D/2D-only XGBoost variants
-python -m regression.models.xgboost_regression_1d2d_variants
+# 3. Compare the three 1D/2D XGBoost variants
+python -m regression.models.compare_xgboost_1d2d_variants
+
+# 4. Optional all-descriptor feature-selection experiment
+python -m regression.models.xgboost_regression_all_descriptors_feature_selection
 ```
 
-### Regression model choices
+### Best observed regression model
 
-#### 1. Random Forest versus XGBoost comparison
+The best test result among the retained regression workflows was **plain
+1D/2D XGBoost**. Its dedicated entry point is
+`xgboost_regression_plain_1d2d.py`, and the same setup appears as Model 1 in
+`compare_xgboost_1d2d_variants.py`.
 
-`compare_regression_models.py` uses all available 1D/2D and 3D descriptors and
-compares two algorithms on one shared split:
+It uses:
 
-- **Random Forest Regression:** averages predictions from many decision trees.
-  It is a strong nonlinear baseline and is less dependent on boosting-specific
-  tuning.
-- **XGBoost Regression:** builds trees sequentially so later trees correct
-  errors made by earlier trees. The configuration uses regularization,
-  row subsampling, and feature subsampling.
+- all 217 RDKit 1D/2D descriptors
+- no 3D descriptors
+- no feature selection
+- no problematic-molecule removal
+- XGBoost with a deterministic 80/20 split
 
-Use this file when the question is: **which general tree algorithm works better
-on the full descriptor table?** It does not perform feature selection or remove
-problematic molecules.
+In the current fixed-seed experiment, its test Q^2 was `0.3608`, higher than
+the feature-selected 1D/2D variants and the feature-selected all-descriptor
+model. This is therefore the project's best observed regression model.
 
-Optional example with a result table:
+Run it with:
+
+```bash
+python -m regression.models.xgboost_regression_plain_1d2d
+```
+
+This command runs only the best plain model. Use the variants file when all
+three XGBoost approaches should be compared on one shared split.
+
+### Regression workflow choices
+
+#### 1. Plain algorithm comparison
+
+`compare_regression_models.py` compares three regression algorithms using the
+same 217 1D/2D descriptors, deterministic 80/20 split, and training-set CV:
+
+- **Linear Regression:** an unregularized linear baseline. It tests whether a
+  simple weighted combination of descriptors can explain `Accum`. Because the
+  descriptor matrix is high-dimensional and strongly correlated, this baseline
+  can be numerically unstable and is not expected to be the best model.
+- **Random Forest Regression:** averages predictions from many decision trees
+  and captures nonlinear descriptor interactions.
+- **XGBoost Regression:** builds regularized trees sequentially so later trees
+  correct errors made by earlier trees.
+
+No feature selection, 3D descriptors, or molecule removal is used. This isolates
+the effect of changing the regression algorithm.
 
 ```bash
 python -m regression.models.compare_regression_models \
@@ -230,10 +260,38 @@ python -m regression.models.compare_regression_models \
   --out-csv regression_model_comparison.csv
 ```
 
-#### 2. Final XGBoost using 1D/2D and 3D descriptors
+#### 2. Solo best model: plain 1D/2D XGBoost
 
-`xgboost_regression_all_descriptors_feature_selection.py` is the final
-all-descriptor XGBoost workflow:
+`xgboost_regression_plain_1d2d.py` contains the best observed model as a
+standalone workflow. It performs the 80/20 split, calculates five-fold training
+Q^2, fits plain XGBoost on all 217 1D/2D descriptors, and reports train/test
+R2, MAE, and RMSE.
+
+Use this file for the main regression result without running feature-selection
+or molecule-removal experiments.
+
+#### 3. Three 1D/2D-only XGBoost variants
+
+`compare_xgboost_1d2d_variants.py` excludes all 3D columns and compares:
+
+| Variant | Features | Molecule removal | Role |
+| --- | --- | --- | --- |
+| Model 1 | All 217 1D/2D descriptors | None | **Best observed regression model** |
+| Model 2 | Correlation filtering plus top-80 XGBoost importance selection | None | Tests whether feature selection improves generalization |
+| Model 3 | Same feature-selection approach as Model 2 | Top three problematic molecules removed from training only | Tests the effect of training-only outlier removal |
+
+For Model 3, problematic molecules are ranked using repeated cross-validated
+training predictions. The final test set is never used to identify or remove a
+molecule. During Q^2 calculation, outlier detection and feature selection are
+repeated inside each outer fold.
+
+Use this file when comparing the best plain model against feature selection and
+training-only molecule removal.
+
+#### 4. XGBoost using 1D/2D and 3D descriptors
+
+`xgboost_regression_all_descriptors_feature_selection.py` is the
+all-descriptor feature-selection experiment:
 
 1. Load the combined 1D/2D and 3D descriptor table.
 2. Create the 80/20 holdout split.
@@ -241,30 +299,14 @@ all-descriptor XGBoost workflow:
 4. Select the top 80 features by XGBoost importance using training rows only.
 5. Refit both feature-selection stages inside every training CV fold for an
    unbiased training Q^2 estimate.
-6. Fit the final XGBoost model and evaluate the untouched test set.
+6. Fit XGBoost on the selected training features and evaluate the untouched
+   test set.
 
 This model **does not remove any problematic/outlier molecules**.
 
-Use this file when the question is: **how does a feature-selected model perform
-when all descriptor types, including 3D, are available?**
-
-#### 3. Three 1D/2D-only XGBoost variants
-
-`xgboost_regression_1d2d_variants.py` excludes all 3D columns and compares:
-
-| Variant | Features | Molecule removal |
-| --- | --- | --- |
-| Model 1 | All 217 1D/2D descriptors | None |
-| Model 2 | Correlation filtering plus top-80 XGBoost importance selection | None |
-| Model 3 | Same feature-selection approach as Model 2 | Top three problematic molecules removed from training only |
-
-For Model 3, problematic molecules are ranked using repeated cross-validated
-training predictions. The final test set is never used to identify or remove a
-molecule. During Q^2 calculation, outlier detection and feature selection are
-repeated inside each outer fold.
-
-Use this file when the question is: **how much do feature selection and the
-training-only removal of the three hardest molecules change 1D/2D performance?**
+Use this file when the question is: **does adding 3D descriptors and applying
+leakage-safe feature selection improve performance?** In the current results,
+it did not outperform plain 1D/2D XGBoost.
 
 All regression reports distinguish:
 
@@ -285,7 +327,7 @@ python -m regression.preprocessing.build_smiles_review
 # 2. Consolidate Tables 1-4, compute RDKit 1D/2D descriptors, and save a split
 python -m regression.preprocessing.split_regression_data
 
-# 3. Generate the 3D descriptor table used by the final regression models
+# 3. Generate the 3D descriptor table used by descriptor-comparison workflows
 python -m regression.preprocessing.compute_3d_descriptors
 ```
 
@@ -293,12 +335,12 @@ The third step is computationally expensive because it generates and optimizes
 multiple conformers for every molecule.
 
 `split_regression_data_with_3d.py` is an optional utility for saving a separate
-persisted split from an already enriched descriptor table. The final regression
-model scripts create their own deterministic holdout splits and do not consume
+persisted split from an already enriched descriptor table. The regression model
+scripts create their own deterministic holdout splits and do not consume
 those persisted split files.
 
 `preprocess_descriptors.py` produces exploratory IQR-filtered and scaled files.
-Its outputs are not consumed by the final regression models described above.
+Its outputs are not consumed by the regression models described above.
 
 ## Visualizations
 
@@ -322,7 +364,8 @@ python -m regression.visualization.plot_regression_predictions xgb
 ```
 
 The prediction plot uses the shared 1D/2D regression split utility. It is a
-general visualization helper, not the all-descriptor final model pipeline.
+general visualization helper, not the all-descriptor feature-selection
+experiment.
 
 Generated static figures are written to `results/figures/`.
 

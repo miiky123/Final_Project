@@ -4,8 +4,9 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import KFold, cross_val_score, train_test_split
 
 try:
     from xgboost import XGBRegressor
@@ -31,10 +32,12 @@ META_COLS = [
     "SourceTable",
     "SourceFile",
 ]
+THREE_D_PREFIXES = ("water_", "chloroform_", "octanol_")
 
 
 def get_feature_columns(df):
-    return [col for col in df.columns if col not in META_COLS]
+    descriptor_cols = [col for col in df.columns if col not in META_COLS]
+    return [col for col in descriptor_cols if not col.startswith(THREE_D_PREFIXES)]
 
 
 def build_accum_stratify_labels(df, max_bins=5):
@@ -66,13 +69,18 @@ def load_regression_dataset(data_path):
 
     feature_cols = get_feature_columns(df)
     df = df.dropna(subset=feature_cols + ["Accum"]).reset_index(drop=True)
+    all_descriptor_cols = [col for col in df.columns if col not in META_COLS]
+    excluded_3d_cols = [
+        col for col in all_descriptor_cols if col.startswith(THREE_D_PREFIXES)
+    ]
 
-    print("=== Regression Dataset ===")
+    print("=== Plain 1D/2D Regression Dataset ===")
     print("Input file:", data_path)
     print("Rows before de-dup:", rows_before)
     print("Rows after de-dup :", rows_after_dedup)
     print("Rows used         :", len(df))
-    print("Feature count     :", len(feature_cols))
+    print("1D/2D features    :", len(feature_cols))
+    print("Excluded 3D cols  :", len(excluded_3d_cols))
 
     return df, feature_cols
 
@@ -99,11 +107,13 @@ def get_xgboost_model(seed):
         gamma=0.3,
         objective="reg:squarederror",
         random_state=seed,
+        n_jobs=1,
     )
 
 
-def evaluate_model(model_name, model, X_train, X_test, y_train, y_test, cv_folds):
-    cv_scores = cross_val_score(model, X_train, y_train, cv=cv_folds, scoring="r2")
+def evaluate_model(model_name, model, X_train, X_test, y_train, y_test, cv_folds, seed):
+    cv = KFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+    cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring="r2")
     model.fit(X_train, y_train)
 
     train_pred = model.predict(X_train)
@@ -123,7 +133,10 @@ def evaluate_model(model_name, model, X_train, X_test, y_train, y_test, cv_folds
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a regression comparison table for Random Forest and XGBoost."
+        description=(
+            "Compare plain Linear Regression, Random Forest, and XGBoost "
+            "using only 1D/2D descriptors."
+        )
     )
     parser.add_argument("--data-path", default=DATA_PATH)
     parser.add_argument("--test-frac", type=float, default=TEST_FRAC)
@@ -157,8 +170,12 @@ def main():
     print("Test rows :", len(test_df))
     print("Target    : Accum")
     print("Output    : predicted numeric Accum value")
+    print("Features  : plain 1D/2D descriptors")
+    print("Selection : none")
+    print("Removal   : none")
 
     model_specs = [
+        ("Linear Regression", LinearRegression()),
         ("Random Forest Regression", get_random_forest_model(args.seed)),
         ("XGBoost Regression", get_xgboost_model(args.seed)),
     ]
@@ -172,6 +189,7 @@ def main():
             y_train,
             y_test,
             args.cv_folds,
+            args.seed,
         )
         for model_name, model in model_specs
     ]

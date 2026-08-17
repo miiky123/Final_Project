@@ -121,8 +121,9 @@ def calculate_train_q2(
     kfold = KFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
     scores = []
 
-    for fold_idx, (fit_idx, val_idx) in enumerate(kfold.split(X_train), start=1):
-        model = get_model(SEED + fold_idx)
+    for fit_idx, val_idx in kfold.split(X_train):
+        # Use the same fixed model seed as the comparison entry points.
+        model = get_model(SEED)
         model.fit(X_train.iloc[fit_idx], y_train.iloc[fit_idx])
         val_pred = model.predict(X_train.iloc[val_idx])
         scores.append(r2_score(y_train.iloc[val_idx], val_pred))

@@ -200,11 +200,8 @@ python -m regression.models.compare_regression_models
 # 2. Best observed model by itself
 python -m regression.models.xgboost_regression_plain_1d2d
 
-# 3. Compare the three 1D/2D XGBoost variants
-python -m regression.models.compare_xgboost_1d2d_variants
-
-# 4. Optional all-descriptor feature-selection experiment
-python -m regression.models.xgboost_regression_all_descriptors_feature_selection
+# 3. Compare four 1D/2D and 3D XGBoost variants
+python -m regression.models.compare_xgboost_1d2d_3d_variants
 ```
 
 ### Best observed regression model
@@ -212,7 +209,7 @@ python -m regression.models.xgboost_regression_all_descriptors_feature_selection
 The best test result among the retained regression workflows was **plain
 1D/2D XGBoost**. Its dedicated entry point is
 `xgboost_regression_plain_1d2d.py`, and the same setup appears as Model 1 in
-`compare_xgboost_1d2d_variants.py`.
+`compare_xgboost_1d2d_3d_variants.py`.
 
 It uses:
 
@@ -233,7 +230,12 @@ python -m regression.models.xgboost_regression_plain_1d2d
 ```
 
 This command runs only the best plain model. Use the variants file when all
-three XGBoost approaches should be compared on one shared split.
+four XGBoost approaches should be compared on one shared split.
+
+The comparison files import the plain XGBoost configuration from the standalone
+model file. Model 1 also uses the same five K-fold partitions and fixed model
+seed in every entry point, so its CV Q^2 and final test predictions are
+identical wherever it is reported.
 
 ### Regression workflow choices
 
@@ -270,43 +272,30 @@ R2, MAE, and RMSE.
 Use this file for the main regression result without running feature-selection
 or molecule-removal experiments.
 
-#### 3. Three 1D/2D-only XGBoost variants
+#### 3. Four 1D/2D and 3D XGBoost variants
 
-`compare_xgboost_1d2d_variants.py` excludes all 3D columns and compares:
+`compare_xgboost_1d2d_3d_variants.py` compares:
 
 | Variant | Features | Molecule removal | Role |
 | --- | --- | --- | --- |
 | Model 1 | All 217 1D/2D descriptors | None | **Best observed regression model** |
 | Model 2 | Correlation filtering plus top-80 XGBoost importance selection | None | Tests whether feature selection improves generalization |
 | Model 3 | Same feature-selection approach as Model 2 | Top three problematic molecules removed from training only | Tests the effect of training-only outlier removal |
+| Model 4 | All 217 1D/2D plus 30 3D descriptors, followed by correlation filtering and top-80 importance selection | None | Tests whether adding 3D descriptors improves the feature-selected model |
 
 For Model 3, problematic molecules are ranked using repeated cross-validated
 training predictions. The final test set is never used to identify or remove a
 molecule. During Q^2 calculation, outlier detection and feature selection are
 repeated inside each outer fold.
 
-Use this file when comparing the best plain model against feature selection and
-training-only molecule removal.
+Models 2 and 4 refit correlation filtering and XGBoost importance selection
+inside each CV fold. Model 4 also fills missing descriptor values with medians
+calculated from the corresponding training partition only. Its final test set
+is therefore not used by imputation or feature selection.
 
-#### 4. XGBoost using 1D/2D and 3D descriptors
-
-`xgboost_regression_all_descriptors_feature_selection.py` is the
-all-descriptor feature-selection experiment:
-
-1. Load the combined 1D/2D and 3D descriptor table.
-2. Create the 80/20 holdout split.
-3. Remove highly correlated features using training rows only.
-4. Select the top 80 features by XGBoost importance using training rows only.
-5. Refit both feature-selection stages inside every training CV fold for an
-   unbiased training Q^2 estimate.
-6. Fit XGBoost on the selected training features and evaluate the untouched
-   test set.
-
-This model **does not remove any problematic/outlier molecules**.
-
-Use this file when the question is: **does adding 3D descriptors and applying
-leakage-safe feature selection improve performance?** In the current results,
-it did not outperform plain 1D/2D XGBoost.
+Use this file when comparing the best plain model against feature selection,
+training-only molecule removal, and the addition of 3D descriptors. In the
+current results, Model 4 did not outperform plain 1D/2D XGBoost.
 
 All regression reports distinguish:
 
@@ -364,8 +353,7 @@ python -m regression.visualization.plot_regression_predictions xgb
 ```
 
 The prediction plot uses the shared 1D/2D regression split utility. It is a
-general visualization helper, not the all-descriptor feature-selection
-experiment.
+general visualization helper, not the four-model variant comparison.
 
 Generated static figures are written to `results/figures/`.
 

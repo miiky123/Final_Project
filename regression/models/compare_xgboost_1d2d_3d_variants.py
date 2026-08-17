@@ -1,16 +1,10 @@
 import os
+import sys
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, RepeatedKFold, train_test_split
-
-try:
-    from xgboost import XGBRegressor
-except ImportError as exc:
-    raise ImportError(
-        "xgboost is not installed. Install it with `pip install xgboost` to run this model."
-    ) from exc
 
 
 # =============================================================================
@@ -19,6 +13,11 @@ except ImportError as exc:
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from regression.models.xgboost_regression_plain_1d2d import get_model
+
 DATA_PATH = os.path.join(PROJECT_ROOT, "regression", "data", "processed", "tables1_4_with_3d.csv")
 
 SEED = 42
@@ -44,30 +43,38 @@ THREE_D_PREFIXES = ("water_", "chloroform_", "octanol_")
 
 
 # =============================================================================
-# Model and feature helpers
+# Feature helpers
 # =============================================================================
-
-def get_model(seed: int) -> XGBRegressor:
-    return XGBRegressor(
-        n_estimators=300,
-        max_depth=3,
-        learning_rate=0.03,
-        min_child_weight=5,
-        subsample=0.6,
-        colsample_bytree=0.5,
-        reg_alpha=1.0,
-        reg_lambda=10.0,
-        gamma=0.3,
-        objective="reg:squarederror",
-        random_state=seed,
-        n_jobs=1,
-    )
 
 
 def get_1d_2d_feature_columns(df: pd.DataFrame) -> list[str]:
     """Return descriptor columns while explicitly excluding all 3D descriptors."""
     descriptor_cols = [col for col in df.columns if col not in META_COLS]
     return [col for col in descriptor_cols if not col.startswith(THREE_D_PREFIXES)]
+
+
+def get_all_feature_columns(df: pd.DataFrame) -> list[str]:
+    """Return all 1D/2D and 3D descriptor columns."""
+    return [col for col in df.columns if col not in META_COLS]
+
+
+def impute_with_training_medians(
+    X_train: pd.DataFrame,
+    X_eval: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fit descriptor medians on training rows and apply them to both sets."""
+    medians = X_train.median(axis=0)
+    X_train_imputed = X_train.fillna(medians)
+    X_eval_imputed = X_eval.fillna(medians)
+
+    unusable = X_train_imputed.columns[X_train_imputed.isna().any()].tolist()
+    if unusable:
+        raise ValueError(
+            "Training data contains descriptor columns with no usable values: "
+            f"{unusable}"
+        )
+
+    return X_train_imputed, X_eval_imputed
 
 
 def select_uncorrelated_features(
@@ -126,6 +133,7 @@ def apply_feature_selection(
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """Fit both selection stages on X_train and only transform X_eval."""
+    X_train, X_eval = impute_with_training_medians(X_train, X_eval)
     uncorrelated = select_uncorrelated_features(X_train, verbose=verbose)
     X_train_uncorrelated = X_train[uncorrelated]
 
@@ -160,7 +168,7 @@ def build_accum_stratify_labels(df: pd.DataFrame, max_bins: int = 5) -> pd.Serie
     return None
 
 
-def load_regression_dataset() -> tuple[pd.DataFrame, list[str]]:
+def load_regression_dataset() -> tuple[pd.DataFrame, list[str], list[str]]:
     if not os.path.exists(DATA_PATH):
         raise FileNotFoundError(
             f"Could not find input dataset: {DATA_PATH}\n"
@@ -172,22 +180,24 @@ def load_regression_dataset() -> tuple[pd.DataFrame, list[str]]:
     df = df.drop_duplicates(subset=["SMILES"]).reset_index(drop=True)
     after_dedup_rows = len(df)
 
-    feature_cols = get_1d_2d_feature_columns(df)
-    df = df.dropna(subset=feature_cols + ["Accum"]).reset_index(drop=True)
+    feature_cols_1d2d = get_1d_2d_feature_columns(df)
+    all_feature_cols = get_all_feature_columns(df)
+    df = df.dropna(subset=feature_cols_1d2d + ["Accum"]).reset_index(drop=True)
+    three_d_cols = [
+        col for col in all_feature_cols if col.startswith(THREE_D_PREFIXES)
+    ]
 
-    all_descriptor_cols = [col for col in df.columns if col not in META_COLS]
-    excluded_3d_cols = [col for col in all_descriptor_cols if col.startswith(THREE_D_PREFIXES)]
-
-    print("=== 1D/2D dataset summary ===")
+    print("=== 1D/2D + 3D dataset summary ===")
     print("Input file              :", DATA_PATH)
     print("Rows before de-dup      :", initial_rows)
     print("Rows after de-dup       :", after_dedup_rows)
     print("Final rows used         :", len(df))
     print("Unique SMILES           :", df["SMILES"].nunique())
-    print("1D/2D feature count     :", len(feature_cols))
-    print("Excluded 3D feature count:", len(excluded_3d_cols))
+    print("1D/2D feature count     :", len(feature_cols_1d2d))
+    print("Available 3D features   :", len(three_d_cols))
+    print("Rows with missing 3D    :", int(df[three_d_cols].isna().any(axis=1).sum()))
 
-    return df, feature_cols
+    return df, feature_cols_1d2d, all_feature_cols
 
 
 def split_train_test(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -222,8 +232,9 @@ def calculate_plain_q2(X: pd.DataFrame, y: pd.Series, seed: int = SEED) -> np.nd
     kfold = KFold(n_splits=N_SPLITS, shuffle=True, random_state=seed)
     scores = []
 
-    for fold_idx, (train_idx, val_idx) in enumerate(kfold.split(X), start=1):
-        model = get_model(seed + fold_idx)
+    for train_idx, val_idx in kfold.split(X):
+        # Keep the plain model identical across every entry point.
+        model = get_model(seed)
         model.fit(X.iloc[train_idx], y.iloc[train_idx])
         prediction = model.predict(X.iloc[val_idx])
         scores.append(r2_score(y.iloc[val_idx], prediction))
@@ -575,15 +586,60 @@ def run_outlier_removed_model(
     )
 
 
+def run_all_descriptor_feature_selected_model(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    all_feature_cols: list[str],
+) -> dict[str, float | str | int]:
+    print("\n\n######## Model 4: 1D/2D + 3D with feature selection ########")
+    X_train_raw = train_df[all_feature_cols]
+    y_train = train_df["Accum"]
+    X_test_raw = test_df[all_feature_cols]
+    y_test = test_df["Accum"]
+
+    print("\nCalculating fold-local all-descriptor feature-selection Q^2...")
+    q2_scores = calculate_feature_selected_q2(X_train_raw, y_train)
+    X_train, X_test, selected = apply_feature_selection(
+        X_train_raw,
+        y_train,
+        X_test_raw,
+        seed=SEED,
+        verbose=True,
+    )
+    selected_3d = [
+        feature for feature in selected if feature.startswith(THREE_D_PREFIXES)
+    ]
+
+    print("Selected 3D feature count:", len(selected_3d))
+    print("Problematic molecule removal: disabled")
+
+    model = get_model(SEED)
+    model.fit(X_train, y_train)
+    return print_model_report(
+        "Model 4 - selected 1D/2D + 3D",
+        y_train,
+        model.predict(X_train),
+        y_test,
+        model.predict(X_test),
+        q2_scores,
+        len(selected),
+    )
+
+
 def train_and_evaluate() -> None:
-    """Run three comparable 1D/2D-only XGBoost regression pipelines."""
-    df, feature_cols = load_regression_dataset()
+    """Run four XGBoost descriptor, selection, and removal variants."""
+    df, feature_cols_1d2d, all_feature_cols = load_regression_dataset()
     train_df, test_df = split_train_test(df)
 
     results = [
-        run_plain_model(train_df, test_df, feature_cols),
-        run_feature_selected_model(train_df, test_df, feature_cols),
-        run_outlier_removed_model(train_df, test_df, feature_cols),
+        run_plain_model(train_df, test_df, feature_cols_1d2d),
+        run_feature_selected_model(train_df, test_df, feature_cols_1d2d),
+        run_outlier_removed_model(train_df, test_df, feature_cols_1d2d),
+        run_all_descriptor_feature_selected_model(
+            train_df,
+            test_df,
+            all_feature_cols,
+        ),
     ]
 
     print("\n\n================ Model comparison ================")

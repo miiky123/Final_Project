@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -8,16 +9,16 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 
-try:
-    from xgboost import XGBRegressor
-except ImportError as exc:
-    raise ImportError(
-        "xgboost is not installed. Install it with `pip install xgboost` to run this comparison."
-    ) from exc
-
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from regression.models.xgboost_regression_plain_1d2d import (
+    get_model as get_plain_xgboost_model,
+)
+
 DATA_PATH = os.path.join(PROJECT_ROOT, "regression", "data", "processed", "tables1_4_with_3d.csv")
 
 SEED = 42
@@ -95,20 +96,7 @@ def get_random_forest_model(seed):
 
 
 def get_xgboost_model(seed):
-    return XGBRegressor(
-        n_estimators=300,
-        max_depth=3,
-        learning_rate=0.03,
-        min_child_weight=5,
-        subsample=0.6,
-        colsample_bytree=0.5,
-        reg_alpha=1.0,
-        reg_lambda=10.0,
-        gamma=0.3,
-        objective="reg:squarederror",
-        random_state=seed,
-        n_jobs=1,
-    )
+    return get_plain_xgboost_model(seed)
 
 
 def evaluate_model(model_name, model, X_train, X_test, y_train, y_test, cv_folds, seed):

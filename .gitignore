@@ -16,24 +16,15 @@ env/
 .DS_Store
 Thumbs.db
 
-# Small dataset generated artifacts
-small_data_set/data/descriptor_scaler.pkl
-small_data_set/data/tables1_4_consolidated.csv
-small_data_set/data/tables1_4_consolidated.pkl
-small_data_set/data/tables1_4_no_outliers.csv
-small_data_set/data/tables1_4_scaled.csv
-small_data_set/data/tables1_4_train.pkl
-small_data_set/data/tables1_4_test.pkl
-small_data_set/splits/
+# Regression generated artifacts
+regression/data/processed/descriptor_scaler.pkl
+regression/data/processed/tables1_4_consolidated.csv
+regression/data/processed/tables1_4_consolidated.pkl
+regression/data/processed/tables1_4_no_outliers.csv
+regression/data/processed/tables1_4_scaled.csv
+regression/data/processed/tables1_4_train.pkl
+regression/data/processed/tables1_4_test.pkl
+regression/data/splits/
 
-# Big dataset generated split artifacts
-big_data_set/splits/
-
-# Keep curated big-data source files and raw small-data tables tracked
-!big_data_set/data_curated/
-!big_data_set/data_curated/*.pkl
-!small_data_set/data/
-!small_data_set/data/table1.csv
-!small_data_set/data/table2.csv
-!small_data_set/data/table3.csv
-!small_data_set/data/table4.csv
+# Classification generated split artifacts
+classification/data/splits/
